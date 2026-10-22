@@ -248,6 +248,11 @@ impl Model {
                  (beta=0.1, original_max=16384); implement and validate it"
             );
         }
+        let llama4 = llama4.map(|v| (
+            v.get("beta").and_then(Value::as_f64).unwrap(),
+            v.get("original_max_position_embeddings")
+                .and_then(Value::as_f64).unwrap(),
+        ));
         ensure!(engine.rope_layout == "split_half", "unsupported RoPE layout");
         ensure!(
             engine.max_len > 0 && engine.max_len <= cfg.max_position_embeddings,
@@ -326,11 +331,7 @@ impl Model {
 
         Ok(Self {
             device, cfg, engine, embed, layers, final_norm, cos, sin,
-            llama4: llama4.map(|v| (
-                v.get("beta").and_then(Value::as_f64).unwrap(),
-                v.get("original_max_position_embeddings")
-                    .and_then(Value::as_f64).unwrap(),
-            )),
+            llama4,
         })
     }
 
