@@ -1,0 +1,24 @@
+loaded; running 17 prompts (lengths [1, 2, 255, 256, 257, 1023, 1024, 10, 512, 1, 5, 10, 5, 6, 7, 11, 1])
+forward done in 163.0s
+sample 0: len=1 cosine=0.999980 max_abs=0.00155 norm_dev=5.18e-7 PASS
+sample 1: len=2 cosine=0.999697 max_abs=0.00918 norm_dev=6.28e-8 PASS
+sample 2: len=255 cosine=0.999983 max_abs=0.00142 norm_dev=2.27e-8 PASS
+sample 3: len=256 cosine=0.999980 max_abs=0.00434 norm_dev=8.08e-8 PASS
+sample 4: len=257 cosine=0.999993 max_abs=0.00082 norm_dev=5.63e-7 PASS
+sample 5: len=1023 cosine=0.999991 max_abs=0.00039 norm_dev=6.74e-8 PASS
+sample 6: len=1024 cosine=0.999993 max_abs=0.00084 norm_dev=4.65e-7 PASS
+sample 7: len=10 cosine=0.999917 max_abs=0.00225 norm_dev=3.77e-7 PASS
+sample 8: len=512 cosine=0.999894 max_abs=0.00201 norm_dev=3.66e-7 PASS
+sample 9: len=1 cosine=0.999949 max_abs=0.00149 norm_dev=1.29e-7 PASS
+sample 10: len=5 cosine=0.999986 max_abs=0.00116 norm_dev=2.96e-7 PASS
+sample 11: len=10 cosine=0.999978 max_abs=0.00285 norm_dev=2.15e-7 PASS
+sample 12: len=5 cosine=0.999968 max_abs=0.00270 norm_dev=1.57e-7 PASS
+sample 13: len=6 cosine=0.999959 max_abs=0.00613 norm_dev=1.45e-7 PASS
+sample 14: len=7 cosine=0.999975 max_abs=0.00195 norm_dev=2.73e-7 PASS
+sample 15: len=11 cosine=0.999988 max_abs=0.00062 norm_dev=4.81e-7 PASS
+sample 16: len=1 cosine=0.999925 max_abs=0.00168 norm_dev=2.90e-7 PASS
+batch invariance: n=34 worst_cosine=1.00000000 worst_max_abs=0.000000 dup_cosine=1.00000000 dup_max_abs=0.000000
+batch-invariance: PASS
+invalid-inputs: empty=true pad=true long=true oov=true -> PASS
+bidirectionality: token0_maxdiff=4.87551 lasttoken_maxdiff=12.62447 -> PASS
+M1-ACCEPTANCE: PASS

@@ -1,0 +1,5 @@
+forward done in 28.8s
+sample 0: len=255 finite=true cosine=0.999983 max_abs=0.00142 norm_dev=2.27e-8 PASS
+sample 1: len=256 finite=true cosine=0.999986 max_abs=0.00109 norm_dev=7.79e-7 PASS
+sample 2: len=1024 finite=true cosine=0.999982 max_abs=0.00050 norm_dev=7.70e-8 PASS
+M1-CORE: PASS

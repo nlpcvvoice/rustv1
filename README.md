@@ -8,7 +8,8 @@ at ISL=1024, by building a small, fully owned inference stack.
 Status: **M1 correctness gate passed on the CPU FP32 oracle** — 17-prompt
 corpus vs vLLM 0.25.0 BF16 reference: all cosine > 0.9996 (worst 0.999697),
 max_abs <= 0.0092, |norm-1| <= 5.2e-7; batch invariance bit-exact; invalid
-inputs rejected; bidirectionality confirmed at stage level. GPU (BF16/CUDA)
+inputs rejected; bidirectionality confirmed at stage level. Evidence and
+reproduction steps: [RESULTS.md](RESULTS.md) (tag `v0.1.0-m1`). GPU (BF16/CUDA)
 path is next. The loader is fail-closed: it
 refuses to run until every model-contract detail is verified against the
 reference implementation. See [Contract](#contract) and [Open items](#open-items).

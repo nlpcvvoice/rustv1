@@ -1,0 +1,8 @@
+=== cargo check rc= 0
+=== cargo test rc= 0
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+inv_freq: n=64 max_abs=5.960e-08 max_rel=1.210e-07 bitexact=False
+cos: n=65536 max_abs=8.310e-05 max_rel=2.552e-01 bitexact=False
+sin: n=65536 max_abs=8.219e-05 max_rel=1.694e-02 bitexact=False
+llama4_scales: n=1024 max_abs=0.000e+00 max_rel=0.000e+00 bitexact=True
+llama4_boundary: n=4 max_abs=0.000e+00 max_rel=0.000e+00 bitexact=True
