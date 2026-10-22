@@ -46,7 +46,7 @@ fn main() -> Result<()> {
 
     let engine: EngineConfig =
         serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
-    let model = Model::load(&dir, Device::Cpu, engine, candle_core::DType::F32)?;
+    let model = Model::load(&dir, Device::Cpu, engine.clone(), candle_core::DType::F32)?;
 
     println!("loaded; running {} prompts (lengths {:?})",
         prompts.len(), prompts.iter().map(Vec::len).collect::<Vec<_>>());
