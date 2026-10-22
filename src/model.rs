@@ -267,7 +267,9 @@ fn validate_manifest(files: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn rms(x: &Tensor, weight: &Tensor, eps: f64) -> candle_core::Result<Tensor> {
+fn rms(x: &Tensor, weight: &Tensor, eps: f64, dtype: DType)
+    -> candle_core::Result<Tensor>
+{
     let xf = x.to_dtype(DType::F32)?;
     let denom = xf.sqr()?
         .mean_keepdim(D::Minus1)?
@@ -275,7 +277,7 @@ fn rms(x: &Tensor, weight: &Tensor, eps: f64) -> candle_core::Result<Tensor> {
         .sqrt()?;
 
     xf.broadcast_div(&denom)?
-        .to_dtype(DType::BF16)?
+        .to_dtype(dtype)?
         .broadcast_mul(weight)
 }
 
@@ -340,6 +342,7 @@ pub fn build_rope_tables(
 
 pub struct Model {
     device: Device,
+    dtype: DType,
     cfg: Config,
     engine: EngineConfig,
     embed: Embedding,
@@ -351,7 +354,9 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn load(dir: &Path, device: Device, engine: EngineConfig) -> Result<Self> {
+    pub fn load(dir: &Path, device: Device, engine: EngineConfig, dtype: DType)
+        -> Result<Self>
+    {
         let cfg: Config =
             serde_json::from_slice(&fs::read(dir.join("config.json"))?)?;
 
@@ -411,7 +416,7 @@ impl Model {
         // Deploy the model directory read-only.
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(
-                &files, DType::BF16, &device
+                &files, dtype, &device
             )?
         };
         // Frozen checkpoint inventory: tensor names are top-level
@@ -459,7 +464,7 @@ impl Model {
         let sin = Tensor::from_vec(sin_v, (engine.max_len, half), &device)?;
 
         Ok(Self {
-            device, cfg, engine, embed, layers, final_norm, cos, sin,
+            device, dtype, cfg, engine, embed, layers, final_norm, cos, sin,
             llama4,
         })
     }
@@ -476,7 +481,7 @@ impl Model {
         let left = (a.broadcast_mul(&cos)? - b.broadcast_mul(&sin)?)?;
         let right = (b.broadcast_mul(&cos)? + a.broadcast_mul(&sin)?)?;
 
-        Tensor::cat(&[&left, &right], 3)?.to_dtype(DType::BF16)
+        Tensor::cat(&[&left, &right], 3)?.to_dtype(self.dtype)
     }
 
     fn repeat_kv(&self, x: &Tensor) -> candle_core::Result<Tensor> {
@@ -532,7 +537,7 @@ impl Model {
         let kv_width = nkv * d;
 
         for layer in &self.layers {
-            let n = rms(&x, &layer.norm1, self.cfg.rms_norm_eps)?;
+            let n = rms(&x, &layer.norm1, self.cfg.rms_norm_eps, self.dtype)?;
             let qkv = linear3(&layer.qkv, &n)?;
 
             let q = qkv.narrow(2, 0, q_width)?
@@ -563,7 +568,7 @@ impl Model {
                         Tensor::from_vec(scales, (1, 1, s, 1), &self.device)?;
                     q.to_dtype(DType::F32)?
                         .broadcast_mul(&scale)?
-                        .to_dtype(DType::BF16)?
+                        .to_dtype(self.dtype)?
                 }
                 None => q,
             };
@@ -574,7 +579,7 @@ impl Model {
                 .broadcast_add(&mask)?;
 
             let probabilities = candle_nn::ops::softmax_last_dim(&scores)?
-                .to_dtype(DType::BF16)?;
+                .to_dtype(self.dtype)?;
 
             let attention = probabilities.matmul(&v)?
                 .transpose(1, 2)?
@@ -583,7 +588,7 @@ impl Model {
 
             x = (&x + &linear3(&layer.out, &attention)?)?;
 
-            let n = rms(&x, &layer.norm2, self.cfg.rms_norm_eps)?;
+            let n = rms(&x, &layer.norm2, self.cfg.rms_norm_eps, self.dtype)?;
             let gu = linear3(&layer.gate_up, &n)?;
             let gate = gu.narrow(2, 0, self.cfg.intermediate_size)?;
             let up = gu.narrow(
@@ -596,7 +601,7 @@ impl Model {
 
         // Final RMSNorm is part of the decoder, before the embedding pooler.
         // It cannot be moved after an average.
-        let x = rms(&x, &self.final_norm, self.cfg.rms_norm_eps)?
+        let x = rms(&x, &self.final_norm, self.cfg.rms_norm_eps, self.dtype)?
             .to_dtype(DType::F32)?;
 
         let mut rows = Vec::with_capacity(b);

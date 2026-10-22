@@ -24,7 +24,10 @@ fn main() -> Result<()> {
 
     let engine: EngineConfig =
         serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
-    let model = Model::load(&dir, Device::Cpu, engine)?;
+    // FP32 CPU mathematical oracle per ASTRO6 #4: same BF16 checkpoint
+    // values widened losslessly to FP32. Candle CPU does not support BF16
+    // matmul; BF16 parity is a GPU (M2) concern.
+    let model = Model::load(&dir, Device::Cpu, engine, candle_core::DType::F32)?;
 
     println!("loaded; running {} prompts (lengths {:?})",
         prompts.len(), prompts.iter().map(Vec::len).collect::<Vec<_>>());

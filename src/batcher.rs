@@ -28,7 +28,8 @@ pub fn start(
     thread::Builder::new().name("rustv1-gpu".into()).spawn(move || {
         let load = || -> Result<Model> {
             let device = if cpu { Device::Cpu } else { Device::new_cuda(0)? };
-            Model::load(&dir, device, cfg.clone())
+            let dtype = if cpu { candle_core::DType::F32 } else { candle_core::DType::BF16 };
+            Model::load(&dir, device, cfg.clone(), dtype)
         };
 
         let model = match load() {
