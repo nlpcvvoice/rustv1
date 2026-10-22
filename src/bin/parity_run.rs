@@ -38,13 +38,13 @@ fn main() -> Result<()> {
     for (i, emb) in out.iter().enumerate() {
         let r = &reference[i * 2048..(i + 1) * 2048];
         ensure!(emb.len() == 2048, "sample {i}: dim {} != 2048", emb.len());
-        let finite = emb.iter().all(f32::is_finite);
+        let finite = emb.iter().all(|v| v.is_finite());
         let dot: f64 = emb.iter().zip(r).map(|(a, b)| *a as f64 * *b as f64).sum();
         let na: f64 = emb.iter().map(|a| (*a as f64).powi(2)).sum::<f64>().sqrt();
         let nb: f64 = r.iter().map(|a| (*a as f64).powi(2)).sum::<f64>().sqrt();
         let cosine = dot / (na * nb);
         let max_abs = emb.iter().zip(r)
-            .map(|(a, b)| (a as f64 - b as f64).abs())
+            .map(|(a, b)| (*a as f64 - *b as f64).abs())
             .fold(0.0f64, f64::max);
         let norm_dev = (na - 1.0).abs();
 
