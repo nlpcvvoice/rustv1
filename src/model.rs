@@ -101,6 +101,7 @@ fn theta(c: &Config) -> Result<f64> {
 
     let t = result.context("missing rope_theta")?;
     ensure!(t.is_finite() && t > 0.0, "invalid rope_theta");
+    ensure!(t == 1_000_000.0, "unexpected rope_theta for the frozen contract");
     Ok(t)
 }
 
@@ -116,16 +117,23 @@ struct YarnParams {
 }
 
 fn yarn_params(c: &Config) -> Result<Option<YarnParams>> {
+    ensure!(
+        c.rope_scaling.as_ref().map_or(true, Value::is_null),
+        "rope_scaling must be absent for the frozen contract; \
+         reconcile it with rope_parameters explicitly"
+    );
     let Some(params) = c.rope_parameters.as_ref().filter(|p| !p.is_null()) else {
         return Ok(None);
     };
 
-    let kind = params.get("rope_type")
-        .or_else(|| params.get("type"))
-        .and_then(Value::as_str)
-        .unwrap_or("default");
+    let kind = params.get("rope_type").and_then(Value::as_str);
+    let alias = params.get("type").and_then(Value::as_str);
+    if let (Some(a), Some(b)) = (kind, alias) {
+        ensure!(a == b, "conflicting rope_type/type discriminators");
+    }
+    let kind = kind.or(alias).context("rope_parameters missing discriminator");
 
-    match kind {
+    match kind? {
         "default" => Ok(None),
         "yarn" => {
             ensure!(
@@ -134,19 +142,27 @@ fn yarn_params(c: &Config) -> Result<Option<YarnParams>> {
                 "apply_yarn_scaling=true requires the mscale amplitude path; \
                  not present in the frozen contract"
             );
+            let attn_factor = match params.get("attn_factor") {
+                None => 1.0,
+                Some(v) => v.as_f64().context("attn_factor must be numeric")?,
+            };
+            ensure!(attn_factor == 1.0, "non-unit attn_factor unsupported");
+            let extrapolation_factor = match params.get("extrapolation_factor") {
+                None => 1.0,
+                Some(v) => v
+                    .as_f64()
+                    .context("extrapolation_factor must be numeric")?,
+            };
             ensure!(
-                params.get("extrapolation_factor")
-                    .and_then(Value::as_f64)
-                    .unwrap_or(1.0) == 1.0,
+                extrapolation_factor == 1.0,
                 "non-unit extrapolation_factor unsupported"
             );
-            ensure!(
-                params.get("truncate")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(true),
-                "truncate=false unsupported"
-            );
-            Ok(Some(YarnParams {
+            let truncate = match params.get("truncate") {
+                None => true,
+                Some(v) => v.as_bool().context("truncate must be boolean")?,
+            };
+            ensure!(truncate, "truncate=false unsupported");
+            let y = YarnParams {
                 factor: params.get("factor").and_then(Value::as_f64)
                     .context("yarn missing factor")?,
                 original_max: params
@@ -157,7 +173,16 @@ fn yarn_params(c: &Config) -> Result<Option<YarnParams>> {
                     .context("yarn missing beta_fast")?,
                 beta_slow: params.get("beta_slow").and_then(Value::as_f64)
                     .context("yarn missing beta_slow")?,
-            }))
+            };
+            ensure!(
+                y.factor == 16.0
+                    && y.original_max == 16_384.0
+                    && y.beta_fast == 32.0
+                    && y.beta_slow == 1.0,
+                "YaRN parameters differ from the frozen contract \
+                 (factor=16, original_max=16384, beta_fast=32, beta_slow=1)"
+            );
+            Ok(Some(y))
         }
         other => bail!("unsupported rope_type {other:?}; implement and validate it"),
     }
@@ -230,6 +255,12 @@ impl Model {
             "unexpected model topology"
         );
         ensure!(cfg.head_dim % 2 == 0, "invalid head_dim");
+        ensure!(cfg.num_key_value_heads == 8, "unexpected KV head count");
+        ensure!(
+            cfg.num_attention_heads % cfg.num_key_value_heads == 0,
+            "invalid GQA geometry"
+        );
+        ensure!(cfg.rms_norm_eps == 1e-5, "unexpected rms_norm_eps");
         ensure!(cfg.hidden_act == "silu", "only SiLU is implemented");
         ensure!(!cfg.is_causal, "this executor requires bidirectional attention");
         ensure!(!engine.causal, "engine.causal must be false");
@@ -426,8 +457,7 @@ impl Model {
                 Some((beta, original_max)) => {
                     let scales: Vec<f32> = (0..s)
                         .map(|p| {
-                            (1.0 + beta
-                                * (1.0 + ((p as f64) / original_max).floor()).ln())
+                            crate::yarn::llama4_attn_scale(beta, original_max, p)
                                 as f32
                         })
                         .collect();

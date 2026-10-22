@@ -1,9 +1,11 @@
-// Standard YaRN frequency blend, verified line-by-line against the vLLM
+// Standard YaRN frequency blend. Mathematically equivalent to the vLLM
 // v0.25.0 reference (YaRNScalingRotaryEmbedding::_compute_inv_freq with
-// extrapolation_factor=1 and yarn_find_correction_range(truncate=true)).
-// Wired into the loader for rope_type="yarn"; the reference applies no
-// mscale amplitude factor when apply_yarn_scaling=false, which the loader
-// asserts.
+// extrapolation_factor=1 and yarn_find_correction_range(truncate=true));
+// floating-point equivalence is NOT established (reference builds positive
+// powers and the blend in FP32; this helper blends in FP64 and rounds once).
+// Wired into the loader for rope_type="yarn". The reference uses attn_factor
+// as the cache amplitude when apply_yarn_scaling=false; this port supports
+// only attn_factor=1, enforced by the loader.
 
 /// Standard YaRN frequency blend.
 pub fn standard_yarn_inv_freq(
@@ -41,6 +43,12 @@ pub fn standard_yarn_inv_freq(
         .collect()
 }
 
+/// llama-4 attention scale, shared by Model::forward and the tests.
+/// Matches vLLM mistral.py: 1 + beta * ln(1 + floor(p / original_max)).
+pub fn llama4_attn_scale(beta: f64, original_max: f64, position: usize) -> f64 {
+    1.0 + beta * (1.0 + ((position as f64) / original_max).floor()).ln()
+}
+
 #[cfg(test)]
 mod yarn_tests {
     use super::*;
@@ -67,17 +75,24 @@ mod yarn_tests {
 
     #[test]
     fn llama4_scale_identity_below_boundary() {
-        // scale(p) = 1 + beta * ln(1 + floor(p / original_max)).
+        // Exercises the shared helper used by Model::forward.
         let (beta, original_max) = (0.1_f64, 16_384.0);
-        let scale = |p: usize| {
-            1.0 + beta * (1.0 + ((p as f64) / original_max).floor()).ln()
-        };
         for p in 0..1024 {
-            assert_eq!(scale(p), 1.0);
+            assert_eq!(llama4_attn_scale(beta, original_max, p), 1.0);
         }
         // Exact values at and beyond the boundary.
-        assert_eq!(scale(16_383), 1.0);
-        assert!((scale(16_384) - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12);
-        assert!((scale(32_768) - (1.0 + 0.1 * 3.0f64.ln())).abs() < 1e-12);
+        assert_eq!(llama4_attn_scale(beta, original_max, 16_383), 1.0);
+        assert!(
+            (llama4_attn_scale(beta, original_max, 16_384)
+                - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12
+        );
+        assert!(
+            (llama4_attn_scale(beta, original_max, 32_767)
+                - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12
+        );
+        assert!(
+            (llama4_attn_scale(beta, original_max, 32_768)
+                - (1.0 + 0.1 * 3.0f64.ln())).abs() < 1e-12
+        );
     }
 }
