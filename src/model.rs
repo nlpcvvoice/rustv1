@@ -493,7 +493,9 @@ impl Model {
             .reshape((b, nkv * groups, s, d))
     }
 
-    pub fn forward(&self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+    /// Decoder core shared by forward and forward_states: returns the
+    /// token states after the final RMSNorm in FP32, shape (b, s, h).
+    fn run_decoder(&self, sequences: &[Vec<u32>]) -> Result<Tensor> {
         ensure!(!sequences.is_empty(), "empty batch");
         let b = sequences.len();
         let s = sequences.iter().map(Vec::len).max().unwrap();
@@ -603,6 +605,12 @@ impl Model {
         // It cannot be moved after an average.
         let x = rms(&x, &self.final_norm, self.cfg.rms_norm_eps, self.dtype)?
             .to_dtype(DType::F32)?;
+        Ok(x)
+    }
+
+    pub fn forward(&self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+        let x = self.run_decoder(sequences)?;
+        let b = sequences.len();
 
         let mut rows = Vec::with_capacity(b);
         for (row, seq) in sequences.iter().enumerate() {
@@ -619,6 +627,22 @@ impl Model {
             .clamp(1e-12, f64::INFINITY)?;
 
         Ok(pooled.broadcast_div(&norm)?.to_vec2::<f32>()?)
+    }
+
+    /// Per-token states after the final RMSNorm (valid tokens only),
+    /// shape (b, seq_len, hidden). Used for stage-level tests such as
+    /// bidirectionality.
+    pub fn forward_states(&self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<Vec<f32>>>> {
+        let x = self.run_decoder(sequences)?;
+        let mut out = Vec::with_capacity(sequences.len());
+        for (row, seq) in sequences.iter().enumerate() {
+            out.push(
+                x.i(row)?
+                    .narrow(0, 0, seq.len())?
+                    .to_vec2::<f32>()?,
+            );
+        }
+        Ok(out)
     }
 }
 
