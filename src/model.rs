@@ -109,11 +109,11 @@ fn theta(c: &Config) -> Result<f64> {
 /// implementation (YaRNScalingRotaryEmbedding + yarn_find_correction_range
 /// with truncate=true). Only the exact configuration present in the frozen
 /// checkpoint contract is accepted.
-struct YarnParams {
-    factor: f64,
-    original_max: f64,
-    beta_fast: f64,
-    beta_slow: f64,
+pub struct YarnParams {
+    pub factor: f64,
+    pub original_max: f64,
+    pub beta_fast: f64,
+    pub beta_slow: f64,
 }
 
 fn yarn_params(c: &Config) -> Result<Option<YarnParams>> {
@@ -226,6 +226,39 @@ struct Layer {
     down: Linear,
 }
 
+/// RoPE cos/sin tables for the frozen contract pipeline:
+/// FP32-rounded YaRN inv_freq -> FP64 angle -> FP32 sin/cos.
+/// Shared by Model::load and the table-dump binary so parity checks
+/// compare exactly what the model executes.
+pub fn build_rope_tables(
+    theta: f64,
+    yarn: Option<&YarnParams>,
+    head_dim: usize,
+    max_len: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let half = head_dim / 2;
+    let inv_freq: Vec<f64> = match yarn {
+        None => (0..half)
+            .map(|j| theta.powf(-((2 * j) as f64) / head_dim as f64))
+            .collect(),
+        Some(y) => crate::yarn::standard_yarn_inv_freq(
+            head_dim, theta, y.factor, y.original_max,
+            y.beta_fast, y.beta_slow,
+        ).into_iter().map(f64::from).collect(),
+    };
+
+    let mut cos = Vec::with_capacity(max_len * half);
+    let mut sin = Vec::with_capacity(max_len * half);
+    for p in 0..max_len {
+        for &inv in &inv_freq {
+            let angle = p as f64 * inv;
+            cos.push(angle.cos() as f32);
+            sin.push(angle.sin() as f32);
+        }
+    }
+    (cos, sin)
+}
+
 pub struct Model {
     device: Device,
     cfg: Config,
@@ -300,7 +333,9 @@ impl Model {
                 &files, DType::BF16, &device
             )?
         };
-        let vb = vb.pp("model");
+        // Frozen checkpoint inventory: tensor names are top-level
+        // (embed_tokens.*, layers.N.*, norm.*); there is no "model." prefix.
+        let vb = vb;
 
         let embed = candle_nn::embedding(
             cfg.vocab_size, cfg.hidden_size, vb.pp("embed_tokens")
@@ -335,30 +370,13 @@ impl Model {
 
         let final_norm = vb.get(h, "norm.weight")?;
 
-        let half = cfg.head_dim / 2;
-        let inv_freq: Vec<f64> = match &yarn {
-            None => (0..half)
-                .map(|j| rope_theta.powf(-((2 * j) as f64) / cfg.head_dim as f64))
-                .collect(),
-            Some(y) => crate::yarn::standard_yarn_inv_freq(
-                cfg.head_dim, rope_theta, y.factor, y.original_max,
-                y.beta_fast, y.beta_slow,
-            ).into_iter().map(f64::from).collect(),
-        };
-
-        let mut cos = Vec::with_capacity(engine.max_len * half);
-        let mut sin = Vec::with_capacity(engine.max_len * half);
-        for p in 0..engine.max_len {
-            for (j, &inv) in inv_freq.iter().enumerate() {
-                let angle = p as f64 * inv;
-                cos.push(angle.cos() as f32);
-                sin.push(angle.sin() as f32);
-            }
-        }
+        let (cos_v, sin_v) =
+            build_rope_tables(rope_theta, yarn.as_ref(), cfg.head_dim, engine.max_len);
 
         // FP32 RoPE arithmetic, cast back to BF16 afterward.
-        let cos = Tensor::from_vec(cos, (engine.max_len, half), &device)?;
-        let sin = Tensor::from_vec(sin, (engine.max_len, half), &device)?;
+        let half = cfg.head_dim / 2;
+        let cos = Tensor::from_vec(cos_v, (engine.max_len, half), &device)?;
+        let sin = Tensor::from_vec(sin_v, (engine.max_len, half), &device)?;
 
         Ok(Self {
             device, cfg, engine, embed, layers, final_norm, cos, sin,
