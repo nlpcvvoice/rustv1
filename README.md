@@ -5,7 +5,11 @@ Goal: close the long-input-sequence throughput gap measured in
 [embedding-serving-bench](https://github.com/nlpcvvoice/embedding-serving-bench)
 at ISL=1024, by building a small, fully owned inference stack.
 
-Status: **correctness bring-up in progress**. The loader is fail-closed: it
+Status: **M1 correctness gate passed on the CPU FP32 oracle** — 17-prompt
+corpus vs vLLM 0.25.0 BF16 reference: all cosine > 0.9996 (worst 0.999697),
+max_abs <= 0.0092, |norm-1| <= 5.2e-7; batch invariance bit-exact; invalid
+inputs rejected; bidirectionality confirmed at stage level. GPU (BF16/CUDA)
+path is next. The loader is fail-closed: it
 refuses to run until every model-contract detail is verified against the
 reference implementation. See [Contract](#contract) and [Open items](#open-items).
 
