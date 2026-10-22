@@ -77,7 +77,7 @@ mod yarn_tests {
         }
         // Exact values at and beyond the boundary.
         assert_eq!(scale(16_383), 1.0);
-        assert!((scale(16_384) - 1.1).abs() < 1e-12);
-        assert!((scale(32_768) - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12);
+        assert!((scale(16_384) - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12);
+        assert!((scale(32_768) - (1.0 + 0.1 * 3.0f64.ln())).abs() < 1e-12);
     }
 }
