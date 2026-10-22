@@ -87,22 +87,24 @@ fn weight_files(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn theta(c: &Config) -> Result<f64> {
-    let mut result = c.rope_theta;
-
+    let mut found = 0usize;
+    if let Some(t) = c.rope_theta {
+        found += 1;
+        ensure!(t == 1_000_000.0, "unexpected top-level rope_theta {t}");
+    }
     for params in [&c.rope_scaling, &c.rope_parameters]
         .into_iter()
         .flatten()
         .filter(|p| !p.is_null())
     {
-        if let Some(v) = params.get("rope_theta").and_then(Value::as_f64) {
-            result = Some(v);
+        if let Some(v) = params.get("rope_theta").filter(|v| !v.is_null()) {
+            found += 1;
+            let t = v.as_f64().context("every declared rope_theta must be numeric")?;
+            ensure!(t == 1_000_000.0, "unexpected nested rope_theta {t}");
         }
     }
-
-    let t = result.context("missing rope_theta")?;
-    ensure!(t.is_finite() && t > 0.0, "invalid rope_theta");
-    ensure!(t == 1_000_000.0, "unexpected rope_theta for the frozen contract");
-    Ok(t)
+    ensure!(found > 0, "at least one rope_theta declaration is required");
+    Ok(1_000_000.0)
 }
 
 /// Parsed YaRN parameters, verified against the vLLM v0.25.0 reference
@@ -116,76 +118,153 @@ pub struct YarnParams {
     pub beta_slow: f64,
 }
 
-fn yarn_params(c: &Config) -> Result<Option<YarnParams>> {
+/// Frozen-contract rotary parameters. The frozen checkpoint must declare
+/// rope_parameters as an object with rope_type "yarn"; absence, malformed
+/// discriminators, or "default" are rejected for this loader.
+fn yarn_params(c: &Config) -> Result<YarnParams> {
     ensure!(
         c.rope_scaling.as_ref().map_or(true, Value::is_null),
         "rope_scaling must be absent for the frozen contract; \
          reconcile it with rope_parameters explicitly"
     );
-    let Some(params) = c.rope_parameters.as_ref().filter(|p| !p.is_null()) else {
-        return Ok(None);
-    };
+    let params = c.rope_parameters.as_ref()
+        .filter(|p| !p.is_null() && p.is_object())
+        .context("frozen contract requires an object rope_parameters")?;
 
-    let kind = params.get("rope_type").and_then(Value::as_str);
-    let alias = params.get("type").and_then(Value::as_str);
+    let kind = match params.get("rope_type") {
+        Some(v) => Some(v.as_str().context("rope_type must be a string")?),
+        None => None,
+    };
+    let alias = match params.get("type") {
+        Some(v) => Some(v.as_str().context("type must be a string")?),
+        None => None,
+    };
     if let (Some(a), Some(b)) = (kind, alias) {
         ensure!(a == b, "conflicting rope_type/type discriminators");
     }
-    let kind = kind.or(alias).context("rope_parameters missing discriminator");
+    let kind = kind.or(alias).context("rope_parameters missing discriminator")?;
 
-    match kind? {
-        "default" => Ok(None),
-        "yarn" => {
-            ensure!(
-                params.get("apply_yarn_scaling")
-                    .and_then(Value::as_bool) == Some(false),
-                "apply_yarn_scaling=true requires the mscale amplitude path; \
-                 not present in the frozen contract"
-            );
-            let attn_factor = match params.get("attn_factor") {
-                None => 1.0,
-                Some(v) => v.as_f64().context("attn_factor must be numeric")?,
-            };
-            ensure!(attn_factor == 1.0, "non-unit attn_factor unsupported");
-            let extrapolation_factor = match params.get("extrapolation_factor") {
-                None => 1.0,
-                Some(v) => v
-                    .as_f64()
-                    .context("extrapolation_factor must be numeric")?,
-            };
-            ensure!(
-                extrapolation_factor == 1.0,
-                "non-unit extrapolation_factor unsupported"
-            );
-            let truncate = match params.get("truncate") {
-                None => true,
-                Some(v) => v.as_bool().context("truncate must be boolean")?,
-            };
-            ensure!(truncate, "truncate=false unsupported");
-            let y = YarnParams {
-                factor: params.get("factor").and_then(Value::as_f64)
-                    .context("yarn missing factor")?,
-                original_max: params
-                    .get("original_max_position_embeddings")
-                    .and_then(Value::as_f64)
-                    .context("yarn missing original_max_position_embeddings")?,
-                beta_fast: params.get("beta_fast").and_then(Value::as_f64)
-                    .context("yarn missing beta_fast")?,
-                beta_slow: params.get("beta_slow").and_then(Value::as_f64)
-                    .context("yarn missing beta_slow")?,
-            };
-            ensure!(
-                y.factor == 16.0
-                    && y.original_max == 16_384.0
-                    && y.beta_fast == 32.0
-                    && y.beta_slow == 1.0,
-                "YaRN parameters differ from the frozen contract \
-                 (factor=16, original_max=16384, beta_fast=32, beta_slow=1)"
-            );
-            Ok(Some(y))
-        }
-        other => bail!("unsupported rope_type {other:?}; implement and validate it"),
+    match kind {
+        "yarn" => {}
+        other => bail!("frozen contract requires rope_type yarn, got {other:?}"),
     }
+
+    ensure!(
+        params.get("apply_yarn_scaling")
+            .and_then(Value::as_bool) == Some(false),
+        "apply_yarn_scaling=true requires the mscale amplitude path; \
+         not present in the frozen contract"
+    );
+    let attn_factor = match params.get("attn_factor") {
+        None => 1.0,
+        Some(v) => v.as_f64().context("attn_factor must be numeric")?,
+    };
+    ensure!(attn_factor == 1.0, "non-unit attn_factor unsupported");
+    let extrapolation_factor = match params.get("extrapolation_factor") {
+        None => 1.0,
+        Some(v) => v
+            .as_f64()
+            .context("extrapolation_factor must be numeric")?,
+    };
+    ensure!(
+        extrapolation_factor == 1.0,
+        "non-unit extrapolation_factor unsupported"
+    );
+    let truncate = match params.get("truncate") {
+        None => true,
+        Some(v) => v.as_bool().context("truncate must be boolean")?,
+    };
+    ensure!(truncate, "truncate=false unsupported");
+    let y = YarnParams {
+        factor: params.get("factor").and_then(Value::as_f64)
+            .context("yarn missing factor")?,
+        original_max: params
+            .get("original_max_position_embeddings")
+            .and_then(Value::as_f64)
+            .context("yarn missing original_max_position_embeddings")?,
+        beta_fast: params.get("beta_fast").and_then(Value::as_f64)
+            .context("yarn missing beta_fast")?,
+        beta_slow: params.get("beta_slow").and_then(Value::as_f64)
+            .context("yarn missing beta_slow")?,
+    };
+    ensure!(
+        y.factor == 16.0
+            && y.original_max == 16_384.0
+            && y.beta_fast == 32.0
+            && y.beta_slow == 1.0,
+        "YaRN parameters differ from the frozen contract \
+         (factor=16, original_max=16384, beta_fast=32, beta_slow=1)"
+    );
+    Ok(y)
+}
+
+/// Frozen tensor manifest: exact names, shapes, and dtype for the BF16
+/// checkpoint. Validated against safetensors headers before any mapping,
+/// so an incorrect artifact cannot be obscured by dtype conversion.
+fn expected_manifest() -> BTreeMap<String, (Vec<usize>, &'static str)> {
+    let mut m = BTreeMap::new();
+    m.insert("embed_tokens.weight".into(), (vec![131072, 2048], "BF16"));
+    m.insert("norm.weight".into(), (vec![2048], "BF16"));
+    for l in 0..16 {
+        let shapes: [(&str, Vec<usize>); 9] = [
+            ("input_layernorm.weight", vec![2048]),
+            ("post_attention_layernorm.weight", vec![2048]),
+            ("self_attn.q_proj.weight", vec![3072, 2048]),
+            ("self_attn.k_proj.weight", vec![1024, 2048]),
+            ("self_attn.v_proj.weight", vec![1024, 2048]),
+            ("self_attn.o_proj.weight", vec![2048, 3072]),
+            ("mlp.gate_proj.weight", vec![6144, 2048]),
+            ("mlp.up_proj.weight", vec![6144, 2048]),
+            ("mlp.down_proj.weight", vec![2048, 6144]),
+        ];
+        for (name, shape) in shapes {
+            m.insert(format!("layers.{l}.{name}"), (shape, "BF16"));
+        }
+    }
+    m
+}
+
+/// Parse safetensors headers (8-byte LE length + JSON) and validate the
+/// complete manifest: exact name set, shapes, and dtypes.
+fn validate_manifest(files: &[PathBuf]) -> Result<()> {
+    let expected = expected_manifest();
+    let mut seen: BTreeMap<String, (Vec<usize>, String)> = BTreeMap::new();
+
+    for file in files {
+        let bytes = fs::read(file)?;
+        ensure!(bytes.len() > 8, "truncated safetensors: {}", file.display());
+        let n = u64::from_le_bytes(bytes[..8].try_into()?) as usize;
+        ensure!(8 + n <= bytes.len(), "truncated header: {}", file.display());
+        let header: BTreeMap<String, Value> =
+            serde_json::from_slice(&bytes[8..8 + n])?;
+
+        for (name, entry) in header {
+            if name == "__metadata__" {
+                continue;
+            }
+            let shape = entry.get("shape").and_then(Value::as_array)
+                .context("tensor missing shape")?
+                .iter()
+                .map(|v| v.as_u64().map(|v| v as usize))
+                .collect::<Option<Vec<_>>>()
+                .context("malformed shape")?;
+            let dtype = entry.get("dtype").and_then(Value::as_str)
+                .context("tensor missing dtype")?
+                .to_string();
+            ensure!(seen.insert(name.clone(), (shape, dtype)).is_none(),
+                "duplicate tensor across shards: {name}");
+        }
+    }
+
+    ensure!(seen.len() == expected.len(),
+        "manifest size {} != expected {}", seen.len(), expected.len());
+    for (name, (shape, dtype)) in &expected {
+        let (got_shape, got_dtype) = seen.get(name)
+            .with_context(|| format!("missing tensor {name}"))?;
+        ensure!(got_shape == shape, "shape mismatch {name}: {got_shape:?} != {shape:?}");
+        ensure!(got_dtype == dtype, "dtype mismatch {name}: {got_dtype} != {dtype}");
+    }
+    Ok(())
 }
 
 fn rms(x: &Tensor, weight: &Tensor, eps: f64) -> candle_core::Result<Tensor> {
@@ -302,19 +381,19 @@ impl Model {
         ensure!(!cfg.attention_bias && !cfg.mlp_bias, "bias unsupported");
         ensure!(!cfg.ada_rms_norm_t_cond, "adaptive norm unsupported");
         let yarn = yarn_params(&cfg)?;
-        let llama4 = cfg.llama_4_scaling.as_ref().filter(|v| !v.is_null());
-        if let Some(v) = llama4 {
-            ensure!(
-                v.get("beta").and_then(Value::as_f64) == Some(0.1)
-                    && v.get("original_max_position_embeddings")
-                        .and_then(Value::as_f64) == Some(16384.0),
-                "llama_4_scaling differs from the frozen contract \
-                 (beta=0.1, original_max=16384); implement and validate it"
-            );
-        }
-        let llama4 = llama4.map(|v| (
-            v.get("beta").and_then(Value::as_f64).unwrap(),
-            v.get("original_max_position_embeddings")
+        let l4 = cfg.llama_4_scaling.as_ref()
+            .filter(|v| !v.is_null() && v.is_object())
+            .context("frozen contract requires llama_4_scaling")?;
+        ensure!(
+            l4.get("beta").and_then(Value::as_f64) == Some(0.1)
+                && l4.get("original_max_position_embeddings")
+                    .and_then(Value::as_f64) == Some(16384.0),
+            "llama_4_scaling differs from the frozen contract \
+             (beta=0.1, original_max=16384)"
+        );
+        let llama4 = Some((
+            l4.get("beta").and_then(Value::as_f64).unwrap(),
+            l4.get("original_max_position_embeddings")
                 .and_then(Value::as_f64).unwrap(),
         ));
         ensure!(engine.rope_layout == "split_half", "unsupported RoPE layout");
@@ -322,9 +401,11 @@ impl Model {
             engine.max_len > 0 && engine.max_len <= cfg.max_position_embeddings,
             "invalid serving length"
         );
+        ensure!(engine.max_len <= 1024, "M1 validates at most 1024 tokens");
 
         let rope_theta = theta(&cfg)?;
         let files = weight_files(dir)?;
+        validate_manifest(&files)?;
 
         // SAFETY: model files must remain immutable while the mmap is live.
         // Deploy the model directory read-only.
@@ -335,7 +416,6 @@ impl Model {
         };
         // Frozen checkpoint inventory: tensor names are top-level
         // (embed_tokens.*, layers.N.*, norm.*); there is no "model." prefix.
-        let vb = vb;
 
         let embed = candle_nn::embedding(
             cfg.vocab_size, cfg.hidden_size, vb.pp("embed_tokens")
@@ -371,7 +451,7 @@ impl Model {
         let final_norm = vb.get(h, "norm.weight")?;
 
         let (cos_v, sin_v) =
-            build_rope_tables(rope_theta, yarn.as_ref(), cfg.head_dim, engine.max_len);
+            build_rope_tables(rope_theta, Some(&yarn), cfg.head_dim, engine.max_len);
 
         // FP32 RoPE arithmetic, cast back to BF16 afterward.
         let half = cfg.head_dim / 2;
@@ -534,5 +614,73 @@ impl Model {
             .clamp(1e-12, f64::INFINITY)?;
 
         Ok(pooled.broadcast_div(&norm)?.to_vec2::<f32>()?)
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    const BASE: &str = r#""hidden_size":2048,"intermediate_size":6144,
+        "num_hidden_layers":16,"num_attention_heads":24,"num_key_value_heads":8,
+        "head_dim":128,"vocab_size":131072,"rms_norm_eps":1e-5,
+        "hidden_act":"silu","max_position_embeddings":262144,
+        "is_causal":false,"pooling":"avg","pad_token_id":11"#;
+
+    const YARN: &str = r#""rope_parameters":{"rope_type":"yarn","type":"yarn",
+        "rope_theta":1000000.0,"factor":16.0,
+        "original_max_position_embeddings":16384,
+        "beta_fast":32.0,"beta_slow":1.0,"apply_yarn_scaling":false}"#;
+
+    fn cfg(extra: &str) -> Config {
+        serde_json::from_str(&format!("{{{BASE},{extra}}}")).unwrap()
+    }
+
+    #[test]
+    fn missing_rope_parameters_rejected() {
+        assert!(yarn_params(&cfg("")).is_err());
+    }
+
+    #[test]
+    fn malformed_alias_rejected() {
+        // rope_type numeric, alias valid: must still fail.
+        assert!(yarn_params(&cfg(
+            r#""rope_parameters":{"rope_type":123,"type":"yarn","factor":16.0,
+               "original_max_position_embeddings":16384,"beta_fast":32.0,
+               "beta_slow":1.0,"apply_yarn_scaling":false}"#
+        )).is_err());
+    }
+
+    #[test]
+    fn default_rope_type_rejected_for_frozen_contract() {
+        assert!(yarn_params(&cfg(
+            r#""rope_parameters":{"rope_type":"default","rope_theta":1000000.0}"#
+        )).is_err());
+    }
+
+    #[test]
+    fn malformed_attn_factor_rejected() {
+        assert!(yarn_params(&cfg(
+            r#""rope_parameters":{"rope_type":"yarn","rope_theta":1000000.0,
+               "factor":16.0,"original_max_position_embeddings":16384,
+               "beta_fast":32.0,"beta_slow":1.0,"apply_yarn_scaling":false,
+               "attn_factor":"x"}"#
+        )).is_err());
+    }
+
+    #[test]
+    fn missing_theta_rejected_and_wrong_theta_rejected() {
+        assert!(theta(&cfg("")).is_err());
+        assert!(theta(&cfg(YARN)).is_ok());
+        assert!(theta(&cfg(
+            r#""rope_parameters":{"rope_type":"yarn","rope_theta":500000.0,
+               "factor":16.0,"original_max_position_embeddings":16384,
+               "beta_fast":32.0,"beta_slow":1.0,"apply_yarn_scaling":false}"#
+        )).is_err());
+    }
+
+    #[test]
+    fn manifest_has_146_entries() {
+        assert_eq!(expected_manifest().len(), 146);
     }
 }
