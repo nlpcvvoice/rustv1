@@ -1,39 +1,37 @@
-// Standard YaRN frequency blend. Implemented and unit-tested, but NOT wired
-// into the model loader: the semantics of `apply_yarn_scaling=false` in the
-// reference implementation must be verified against the installed source
-// before this table replaces plain RoPE frequencies.
-#![allow(dead_code)]
+// Standard YaRN frequency blend, verified line-by-line against the vLLM
+// v0.25.0 reference (YaRNScalingRotaryEmbedding::_compute_inv_freq with
+// extrapolation_factor=1 and yarn_find_correction_range(truncate=true)).
+// Wired into the loader for rope_type="yarn"; the reference applies no
+// mscale amplitude factor when apply_yarn_scaling=false, which the loader
+// asserts.
 
-/// Standard YaRN frequency blend for:
-/// dim=128, theta=1e6, factor=16, original_context=16384,
-/// beta_fast=32, beta_slow=1.
-///
-/// This implements the mathematical blend, not the architecture-specific
-/// semantics of `apply_yarn_scaling`.
-pub fn standard_yarn_inv_freq() -> Vec<f32> {
-    const DIM: usize = 128;
-    const THETA: f64 = 1_000_000.0;
-    const FACTOR: f64 = 16.0;
-    const ORIGINAL: f64 = 16_384.0;
-
+/// Standard YaRN frequency blend.
+pub fn standard_yarn_inv_freq(
+    dim: usize,
+    theta: f64,
+    factor: f64,
+    original_context: f64,
+    beta_fast: f64,
+    beta_slow: f64,
+) -> Vec<f32> {
     let correction_dim = |rotations: f64| {
-        DIM as f64
-            * (ORIGINAL / (rotations * 2.0 * std::f64::consts::PI)).ln()
-            / (2.0 * THETA.ln())
+        dim as f64
+            * (original_context / (rotations * 2.0 * std::f64::consts::PI)).ln()
+            / (2.0 * theta.ln())
     };
 
-    let low = correction_dim(32.0).floor().max(0.0);
-    let high = correction_dim(1.0).ceil().min((DIM - 1) as f64);
+    let low = correction_dim(beta_fast).floor().max(0.0);
+    let high = correction_dim(beta_slow).ceil().min((dim - 1) as f64);
     let denominator = if low == high {
         0.001
     } else {
         high - low
     };
 
-    (0..DIM / 2)
+    (0..dim / 2)
         .map(|j| {
-            let extrapolated = THETA.powf(-((2 * j) as f64) / DIM as f64);
-            let interpolated = extrapolated / FACTOR;
+            let extrapolated = theta.powf(-((2 * j) as f64) / dim as f64);
+            let interpolated = extrapolated / factor;
             let ramp = ((j as f64 - low) / denominator).clamp(0.0, 1.0);
 
             // Low-frequency-index dimensions retain unscaled frequencies.
@@ -49,7 +47,7 @@ mod yarn_tests {
 
     #[test]
     fn standard_yarn_transition() {
-        let inv = standard_yarn_inv_freq();
+        let inv = standard_yarn_inv_freq(128, 1_000_000.0, 16.0, 16_384.0, 32.0, 1.0);
         assert_eq!(inv.len(), 64);
 
         // The standard correction boundaries are floor(...)=20, ceil(...)=37.
@@ -65,5 +63,21 @@ mod yarn_tests {
                 assert!(ratio > 1.0 / 16.0 && ratio < 1.0);
             }
         }
+    }
+
+    #[test]
+    fn llama4_scale_identity_below_boundary() {
+        // scale(p) = 1 + beta * ln(1 + floor(p / original_max)).
+        let (beta, original_max) = (0.1_f64, 16_384.0);
+        let scale = |p: usize| {
+            1.0 + beta * (1.0 + ((p as f64) / original_max).floor()).ln()
+        };
+        for p in 0..1024 {
+            assert_eq!(scale(p), 1.0);
+        }
+        // Exact values at and beyond the boundary.
+        assert_eq!(scale(16_383), 1.0);
+        assert!((scale(16_384) - 1.1).abs() < 1e-12);
+        assert!((scale(32_768) - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12);
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor, D};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};
 use serde::Deserialize;
@@ -94,15 +94,6 @@ fn theta(c: &Config) -> Result<f64> {
         .flatten()
         .filter(|p| !p.is_null())
     {
-        let kind = params.get("rope_type")
-            .or_else(|| params.get("type"))
-            .and_then(Value::as_str);
-
-        ensure!(
-            kind == Some("default"),
-            "unsupported RoPE configuration: {params}; implement and validate it"
-        );
-
         if let Some(v) = params.get("rope_theta").and_then(Value::as_f64) {
             result = Some(v);
         }
@@ -111,6 +102,65 @@ fn theta(c: &Config) -> Result<f64> {
     let t = result.context("missing rope_theta")?;
     ensure!(t.is_finite() && t > 0.0, "invalid rope_theta");
     Ok(t)
+}
+
+/// Parsed YaRN parameters, verified against the vLLM v0.25.0 reference
+/// implementation (YaRNScalingRotaryEmbedding + yarn_find_correction_range
+/// with truncate=true). Only the exact configuration present in the frozen
+/// checkpoint contract is accepted.
+struct YarnParams {
+    factor: f64,
+    original_max: f64,
+    beta_fast: f64,
+    beta_slow: f64,
+}
+
+fn yarn_params(c: &Config) -> Result<Option<YarnParams>> {
+    let Some(params) = c.rope_parameters.as_ref().filter(|p| !p.is_null()) else {
+        return Ok(None);
+    };
+
+    let kind = params.get("rope_type")
+        .or_else(|| params.get("type"))
+        .and_then(Value::as_str)
+        .unwrap_or("default");
+
+    match kind {
+        "default" => Ok(None),
+        "yarn" => {
+            ensure!(
+                params.get("apply_yarn_scaling")
+                    .and_then(Value::as_bool) == Some(false),
+                "apply_yarn_scaling=true requires the mscale amplitude path; \
+                 not present in the frozen contract"
+            );
+            ensure!(
+                params.get("extrapolation_factor")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(1.0) == 1.0,
+                "non-unit extrapolation_factor unsupported"
+            );
+            ensure!(
+                params.get("truncate")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+                "truncate=false unsupported"
+            );
+            Ok(Some(YarnParams {
+                factor: params.get("factor").and_then(Value::as_f64)
+                    .context("yarn missing factor")?,
+                original_max: params
+                    .get("original_max_position_embeddings")
+                    .and_then(Value::as_f64)
+                    .context("yarn missing original_max_position_embeddings")?,
+                beta_fast: params.get("beta_fast").and_then(Value::as_f64)
+                    .context("yarn missing beta_fast")?,
+                beta_slow: params.get("beta_slow").and_then(Value::as_f64)
+                    .context("yarn missing beta_slow")?,
+            }))
+        }
+        other => bail!("unsupported rope_type {other:?}; implement and validate it"),
+    }
 }
 
 fn rms(x: &Tensor, weight: &Tensor, eps: f64) -> candle_core::Result<Tensor> {
@@ -160,6 +210,7 @@ pub struct Model {
     final_norm: Tensor,
     cos: Tensor,
     sin: Tensor,
+    llama4: Option<(f64, f64)>,
 }
 
 impl Model {
@@ -186,10 +237,17 @@ impl Model {
         ensure!(cfg.pad_token_id == 11, "unexpected padding token");
         ensure!(!cfg.attention_bias && !cfg.mlp_bias, "bias unsupported");
         ensure!(!cfg.ada_rms_norm_t_cond, "adaptive norm unsupported");
-        ensure!(
-            cfg.llama_4_scaling.as_ref().map_or(true, Value::is_null),
-            "llama_4_scaling requires an implementation"
-        );
+        let yarn = yarn_params(&cfg)?;
+        let llama4 = cfg.llama_4_scaling.as_ref().filter(|v| !v.is_null());
+        if let Some(v) = llama4 {
+            ensure!(
+                v.get("beta").and_then(Value::as_f64) == Some(0.1)
+                    && v.get("original_max_position_embeddings")
+                        .and_then(Value::as_f64) == Some(16384.0),
+                "llama_4_scaling differs from the frozen contract \
+                 (beta=0.1, original_max=16384); implement and validate it"
+            );
+        }
         ensure!(engine.rope_layout == "split_half", "unsupported RoPE layout");
         ensure!(
             engine.max_len > 0 && engine.max_len <= cfg.max_position_embeddings,
@@ -242,11 +300,20 @@ impl Model {
         let final_norm = vb.get(h, "norm.weight")?;
 
         let half = cfg.head_dim / 2;
+        let inv_freq: Vec<f64> = match &yarn {
+            None => (0..half)
+                .map(|j| rope_theta.powf(-((2 * j) as f64) / cfg.head_dim as f64))
+                .collect(),
+            Some(y) => crate::yarn::standard_yarn_inv_freq(
+                cfg.head_dim, rope_theta, y.factor, y.original_max,
+                y.beta_fast, y.beta_slow,
+            ).into_iter().map(f64::from).collect(),
+        };
+
         let mut cos = Vec::with_capacity(engine.max_len * half);
         let mut sin = Vec::with_capacity(engine.max_len * half);
         for p in 0..engine.max_len {
-            for j in 0..half {
-                let inv = rope_theta.powf(-((2 * j) as f64) / cfg.head_dim as f64);
+            for (j, &inv) in inv_freq.iter().enumerate() {
                 let angle = p as f64 * inv;
                 cos.push(angle.cos() as f32);
                 sin.push(angle.sin() as f32);
@@ -259,6 +326,11 @@ impl Model {
 
         Ok(Self {
             device, cfg, engine, embed, layers, final_norm, cos, sin,
+            llama4: llama4.map(|v| (
+                v.get("beta").and_then(Value::as_f64).unwrap(),
+                v.get("original_max_position_embeddings")
+                    .and_then(Value::as_f64).unwrap(),
+            )),
         })
     }
 
@@ -346,6 +418,26 @@ impl Model {
             let q = self.rope(&q, s)?.contiguous()?;
             let k = self.repeat_kv(&self.rope(&k, s)?)?;
             let v = self.repeat_kv(&v)?;
+
+            // vLLM mistral.py: q = (q * attn_scale) after RoPE, where
+            // scale(p) = 1 + beta * ln(1 + floor(p / original_max)).
+            let q = match self.llama4 {
+                Some((beta, original_max)) => {
+                    let scales: Vec<f32> = (0..s)
+                        .map(|p| {
+                            (1.0 + beta
+                                * (1.0 + ((p as f64) / original_max).floor()).ln())
+                                as f32
+                        })
+                        .collect();
+                    let scale =
+                        Tensor::from_vec(scales, (1, 1, s, 1), &self.device)?;
+                    q.to_dtype(DType::F32)?
+                        .broadcast_mul(&scale)?
+                        .to_dtype(DType::BF16)?
+                }
+                None => q,
+            };
 
             let scores = q.matmul(&k.transpose(2, 3)?.contiguous()?)?
                 .to_dtype(DType::F32)?
