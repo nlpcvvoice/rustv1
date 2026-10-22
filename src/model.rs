@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor, D};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};
 use serde::Deserialize;
@@ -246,7 +246,7 @@ impl Model {
         let mut sin = Vec::with_capacity(engine.max_len * half);
         for p in 0..engine.max_len {
             for j in 0..half {
-                let inv = rope_theta.powf(-(2 * j) as f64 / cfg.head_dim as f64);
+                let inv = rope_theta.powf(-((2 * j) as f64) / cfg.head_dim as f64);
                 let angle = p as f64 * inv;
                 cos.push(angle.cos() as f32);
                 sin.push(angle.sin() as f32);

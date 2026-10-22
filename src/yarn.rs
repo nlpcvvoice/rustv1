@@ -32,7 +32,7 @@ pub fn standard_yarn_inv_freq() -> Vec<f32> {
 
     (0..DIM / 2)
         .map(|j| {
-            let extrapolated = THETA.powf(-(2 * j) as f64 / DIM as f64);
+            let extrapolated = THETA.powf(-((2 * j) as f64) / DIM as f64);
             let interpolated = extrapolated / FACTOR;
             let ramp = ((j as f64 - low) / denominator).clamp(0.0, 1.0);
 
@@ -54,7 +54,7 @@ mod yarn_tests {
 
         // The standard correction boundaries are floor(...)=20, ceil(...)=37.
         for j in 0..64 {
-            let plain = 1_000_000_f64.powf(-(2 * j) as f64 / 128.0);
+            let plain = 1_000_000_f64.powf(-((2 * j) as f64) / 128.0);
             let ratio = inv[j] as f64 / plain;
 
             if j <= 20 {
