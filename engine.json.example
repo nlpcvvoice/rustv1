@@ -1,0 +1,8 @@
+{
+  "causal": false,
+  "rope_layout": "split_half",
+  "max_len": 1024,
+  "max_tokens": 4096,
+  "max_seqs": 8,
+  "wait_us": 0
+}
