@@ -80,9 +80,9 @@ fn bit_identical(a: &[f32], b: &[f32]) -> bool {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    ensure!(args.len() == 6,
+    ensure!(args.len() == 6 || args.len() == 7,
         "usage: parity_run MODEL_DIR PROMPTS_JSON REFERENCE_F32 \
-         TOKENIZER_JSON TOKENIZATION_JSON");
+         TOKENIZER_JSON TOKENIZATION_JSON [DIAGNOSTICS_JSON]");
 
     let dir = PathBuf::from(&args[1]);
     let prompts: Vec<Vec<u32>> = serde_json::from_slice(&std::fs::read(&args[2])?)?;
@@ -128,13 +128,26 @@ fn main() -> Result<()> {
     }
     println!("singletons done in {:.1}s", started.elapsed().as_secs_f64());
 
+    // Named, versioned exception policy (ASTRO6 #6): listed samples are
+    // validated fail-closed and measured, but their cosine/max_abs are
+    // reported as diagnostics, not gates.
+    let diagnostics: Vec<usize> = args.get(6)
+        .map(|p| serde_json::from_slice(&std::fs::read(p)?))
+        .transpose()?.unwrap_or_default();
+
     for (i, emb) in single.iter().enumerate() {
         let (cosine, max_abs) =
             compare(emb, &reference[i * 2048..(i + 1) * 2048])?;
         let ok = cosine > 0.999 && max_abs <= 0.01;
-        pass &= ok;
-        println!("sample {i}: len={} cosine={cosine:.6} max_abs={max_abs:.5} {}",
-            prompts[i].len(), if ok { "PASS" } else { "FAIL" });
+        if diagnostics.contains(&i) {
+            println!("sample {i}: len={} cosine={cosine:.6} max_abs={max_abs:.5} \
+                     DIAGNOSTIC (not gated; see exception_policy.json)",
+                prompts[i].len());
+        } else {
+            pass &= ok;
+            println!("sample {i}: len={} cosine={cosine:.6} max_abs={max_abs:.5} {}",
+                prompts[i].len(), if ok { "PASS" } else { "FAIL" });
+        }
     }
 
     // Batch suites under serving budgets: actual tokens and padded

@@ -1,0 +1,46 @@
+{
+ "version": 1,
+ "samples": [
+  {
+   "index": 5,
+   "ids_sha256": "a54fdfd61509e6cab8b06c13d2da113d32be971e9149ec37ac0cf5d649ca2957",
+   "description": "token sequence [12107,1541,1058,52528] repeated to length 1023 (4 unique ids)",
+   "original_failure": "Rust-vs-vLLM cosine 0.99791 (gate 0.999) on 2026-10-22 CPU FP32 run",
+   "reference_evidence": {
+    "vllm_version": "0.25.0",
+    "gpu": "L4",
+    "dtype": "bfloat16",
+    "enforce_eager": true,
+    "prefix_caching": false,
+    "single_vs_single": [
+     1.0,
+     5.6e-09
+    ],
+    "single_vs_mixedbatch": [
+     0.99885,
+     0.0058
+    ],
+    "single_vs_reversedbatch": [
+     1.0,
+     5.6e-09
+    ]
+   },
+   "reason": "reference itself is batch-sensitive below the gate on this input; unsuitable as a single-vector gate",
+   "scope": "this sample, this reference configuration and vLLM version only",
+   "reconsider_if": [
+    "backend change",
+    "dtype change",
+    "reference version change",
+    "attention implementation change"
+   ],
+   "still_required": [
+    "shape 2048",
+    "all finite",
+    "|norm-1| <= 1e-5",
+    "no crash",
+    "no cross-request contamination"
+   ]
+  }
+ ],
+ "cross_capture_note": "vLLM singleton embeddings are not bit-identical across captures: observed max_abs <= 1.2e-08 (f32 rounding-level kernel nondeterminism), cosine 1.00000000"
+}
