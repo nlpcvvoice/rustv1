@@ -472,3 +472,115 @@ pub fn pooled_sensitivity(
     }));
     Ok(())
 }
+
+pub fn comparison_metrics(a: &[f32], b: &[f32]) -> anyhow::Result<serde_json::Value> {
+    use std::collections::BTreeMap;
+
+    anyhow::ensure!(!a.is_empty() && a.len() == b.len(), "comparison shape mismatch");
+    anyhow::ensure!(
+        a.iter().chain(b).all(|x| x.is_finite()),
+        "nonfinite comparison input"
+    );
+
+    fn ordered32(x: f32) -> i64 {
+        if x == 0.0 {
+            return 0;
+        }
+        let bits = x.to_bits();
+        let magnitude = i64::from(bits & 0x7fff_ffff);
+        if bits >> 31 != 0 { -magnitude } else { magnitude }
+    }
+
+    fn ordered16(x: f32) -> i64 {
+        if x == 0.0 {
+            return 0;
+        }
+        let bits = (x.to_bits() >> 16) as u16;
+        let magnitude = i64::from(bits & 0x7fff);
+        if bits >> 15 != 0 { -magnitude } else { magnitude }
+    }
+
+    fn histogram(distances: &[u64]) -> serde_json::Value {
+        let mut bins: BTreeMap<String, usize> = BTreeMap::new();
+        for &d in distances {
+            let key = match d {
+                0 => "0",
+                1 => "1",
+                2 => "2",
+                3..=4 => "3-4",
+                5..=8 => "5-8",
+                9..=16 => "9-16",
+                17..=32 => "17-32",
+                33..=64 => "33-64",
+                65..=256 => "65-256",
+                _ => ">256",
+            };
+            *bins.entry(key.to_owned()).or_default() += 1;
+        }
+        let mut sorted = distances.to_vec();
+        sorted.sort_unstable();
+        let p99_index = ((sorted.len() * 99 + 99) / 100)
+            .saturating_sub(1)
+            .min(sorted.len() - 1);
+        serde_json::json!({
+            "histogram": bins,
+            "p99": sorted[p99_index],
+            "max": sorted[sorted.len() - 1],
+            "signed_zero_canonicalized": true
+        })
+    }
+
+    let mut aa = 0.0f64;
+    let mut bb = 0.0f64;
+    let mut dot = 0.0f64;
+    let mut squared_error = 0.0f64;
+    let mut max_abs = 0.0f64;
+    let mut differing = 0usize;
+    let mut distances32 = Vec::with_capacity(a.len());
+
+    for (&x, &y) in a.iter().zip(b) {
+        let xf = f64::from(x);
+        let yf = f64::from(y);
+        aa += xf * xf;
+        bb += yf * yf;
+        dot += xf * yf;
+        squared_error += (xf - yf).powi(2);
+        max_abs = max_abs.max((xf - yf).abs());
+        differing += usize::from(x.to_bits() != y.to_bits());
+        distances32.push(ordered32(x).abs_diff(ordered32(y)));
+    }
+
+    let cosine = if aa > 0.0 && bb > 0.0 {
+        Some(dot / (aa.sqrt() * bb.sqrt()))
+    } else if aa == 0.0 && bb == 0.0 {
+        Some(1.0)
+    } else {
+        None
+    };
+
+    let bf16_exact = a.iter().chain(b).all(|x| x.to_bits() & 0xffff == 0);
+    let bf16_steps = if bf16_exact {
+        let distances: Vec<u64> = a.iter().zip(b)
+            .map(|(&x, &y)| ordered16(x).abs_diff(ordered16(y)))
+            .collect();
+        Some(histogram(&distances))
+    } else {
+        None
+    };
+
+    Ok(serde_json::json!({
+        "components": a.len(),
+        "cosine": cosine,
+        "max_abs": max_abs,
+        "l2": squared_error.sqrt(),
+        "relative_l2_to_reference": if bb > 0.0 {
+            Some((squared_error / bb).sqrt())
+        } else {
+            None
+        },
+        "differing_component_count": differing,
+        "bit_identical": differing == 0,
+        "f32_steps": histogram(&distances32),
+        "bf16_steps": bf16_steps
+    }))
+}

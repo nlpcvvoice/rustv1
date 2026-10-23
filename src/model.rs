@@ -403,6 +403,21 @@ pub fn build_rope_tables(
     (cos, sin)
 }
 
+pub type StageSink<'a> =
+    dyn FnMut(isize, &str, &Tensor) -> Result<()> + 'a;
+
+fn emit_stage(
+    sink: &mut Option<&mut StageSink<'_>>,
+    layer: isize,
+    name: &str,
+    tensor: &Tensor,
+) -> Result<()> {
+    if let Some(callback) = sink.as_mut() {
+        callback(layer, name, tensor)?;
+    }
+    Ok(())
+}
+
 pub struct Model {
     device: Device,
     dtype: DType,
@@ -542,6 +557,134 @@ impl Model {
         self
     }
 
+    pub fn replay_common_input(
+        &self,
+        operator: &str,
+        layer_index: usize,
+        inputs: &[Tensor],
+    ) -> Result<Vec<(String, Tensor)>> {
+        use crate::precision::PrecisionProfile;
+    
+        ensure!(self.precision == PrecisionProfile::F, "replay requires profile F");
+        ensure!(self.dtype == DType::BF16, "replay requires BF16 model storage");
+        ensure!(!inputs.is_empty(), "missing replay input");
+    
+        let layer = if operator == "final_rms" {
+            None
+        } else {
+            Some(self.layers.get(layer_index).context("layer out of range")?)
+        };
+    
+        let one = || -> Result<&Tensor> {
+            ensure!(inputs.len() == 1, "{operator}: expected one input");
+            Ok(&inputs[0])
+        };
+    
+        let norm_input = || -> Result<Tensor> {
+            ensure!(
+                inputs.len() == 1 || inputs.len() == 2,
+                "{operator}: expected hidden, optionally residual"
+            );
+            ensure!(inputs[0].dtype() == DType::BF16, "norm input must be BF16");
+            if inputs.len() == 2 {
+                ensure!(inputs[1].dtype() == DType::BF16, "residual must be BF16");
+                Ok((&inputs[0] + &inputs[1])?)
+            } else {
+                Ok(inputs[0].clone())
+            }
+        };
+    
+        let result = match operator {
+            "input_rms" | "post_attention_rms" | "final_rms" => {
+                let x = norm_input()?;
+                let weight = match operator {
+                    "input_rms" => &layer.unwrap().norm1,
+                    "post_attention_rms" => &layer.unwrap().norm2,
+                    _ => &self.final_norm,
+                };
+                crate::precision::rms(
+                    &x, weight, self.cfg.rms_norm_eps, PrecisionProfile::F,
+                )?
+            }
+            "qkv" => linear3(&layer.unwrap().qkv, one()?)?,
+            "o_proj" => linear3(&layer.unwrap().out, one()?)?,
+            "gate_up" => linear3(&layer.unwrap().gate_up, one()?)?,
+            "down" => linear3(&layer.unwrap().down, one()?)?,
+            "silu_mul" => {
+                let gu = one()?;
+                let width = self.cfg.intermediate_size;
+                ensure!(gu.dim(2)? == 2 * width, "wrong gate/up width");
+                crate::precision::silu_mul(
+                    &gu.narrow(2, 0, width)?,
+                    &gu.narrow(2, width, width)?,
+                    PrecisionProfile::F,
+                )?
+            }
+            "rope_q" | "rope_k" => {
+                let x = one()?;
+                let (b, heads, s, d) = x.dims4()?;
+                let expected_heads = if operator == "rope_q" {
+                    self.cfg.num_attention_heads
+                } else {
+                    self.cfg.num_key_value_heads
+                };
+                ensure!(b == 1 && heads == expected_heads && d == self.cfg.head_dim,
+                    "wrong rotary geometry");
+                ensure!(s > 0 && s <= self.engine.max_len, "wrong rotary length");
+                // Actual Rust cache and arithmetic, positions 0..S.
+                // This isolates application+cache differences, not application alone.
+                self.rope(x, s)?
+            }
+            "attention" => {
+                ensure!(inputs.len() == 3, "attention requires Q, K, V");
+                let q = &inputs[0];
+                let k = &inputs[1];
+                let v = &inputs[2];
+                let (b, heads, s, d) = q.dims4()?;
+                ensure!(
+                    b == 1 && heads == self.cfg.num_attention_heads
+                        && d == self.cfg.head_dim,
+                    "wrong Q geometry"
+                );
+                ensure!(
+                    k.dims() == [1, self.cfg.num_key_value_heads, s, d]
+                        && v.dims() == k.dims(),
+                    "K/V must be captured before GQA repetition"
+                );
+                let k = self.repeat_kv(k)?;
+                let v = self.repeat_kv(v)?;
+                let mask = Tensor::zeros((1, 1, s, s), DType::F32, &self.device)?;
+    
+                let actual = crate::precision::attention(
+                    q, &k, &v, &mask, PrecisionProfile::F,
+                )?;
+    
+                // F with F32 operands preserves F32 context rather than casting it
+                // to BF16. This is a dense diagnostic reconstruction, not FlashAttention.
+                let oracle = crate::precision::attention(
+                    &q.to_dtype(DType::F32)?,
+                    &k.to_dtype(DType::F32)?,
+                    &v.to_dtype(DType::F32)?,
+                    &mask,
+                    PrecisionProfile::F,
+                )?;
+    
+                let flatten = |x: Tensor| -> candle_core::Result<Tensor> {
+                    x.transpose(1, 2)?.contiguous()?
+                        .reshape((1, s, heads * d))
+                };
+    
+                return Ok(vec![
+                    ("profile_F".to_owned(), flatten(actual)?),
+                    ("dense_fp32_oracle".to_owned(), flatten(oracle)?),
+                ]);
+            }
+            other => bail!("unsupported replay operator {other}"),
+        };
+    
+        Ok(vec![("profile_F".to_owned(), result)])
+    }
+
     fn rope(&self, x: &Tensor, s: usize) -> candle_core::Result<Tensor> {
         let half = self.cfg.head_dim / 2;
         let x = x.to_dtype(DType::F32)?;
@@ -569,6 +712,7 @@ impl Model {
     /// Decoder core shared by forward and forward_states: returns the
     /// token states after the final RMSNorm in FP32, shape (b, s, h).
     fn run_decoder(&self, sequences: &[Vec<u32>]) -> Result<Tensor> {
+        ensure!(!sequences.is_empty(), "empty batch");
         let s = sequences.iter().map(Vec::len).max().unwrap();
         self.run_decoder_padded(sequences, s, None)
     }
@@ -577,8 +721,10 @@ impl Model {
     /// emits (layer_index, stage_name, tensor) at vLLM-pairable
     /// boundaries. layer_index -1 marks global stages.
     pub fn run_decoder_dump(
-        &self, sequences: &[Vec<u32>], padded_s: usize,
-        sink: &mut dyn FnMut(isize, &str, &Tensor)
+        &self,
+        sequences: &[Vec<u32>],
+        padded_s: usize,
+        sink: &mut StageSink<'_>,
     ) -> Result<Tensor> {
         self.run_decoder_padded(sequences, padded_s, Some(sink))
     }
@@ -586,18 +732,19 @@ impl Model {
     /// Diagnostic entry point (ASTRO6 #9): padded_s overrides the
     /// allocation/mask/reshape width. Valid lengths still drive masking
     /// and pooling; no tokens are appended to valid sequences.
-    fn run_decoder_padded(&self, sequences: &[Vec<u32>],
+    fn run_decoder_padded(
+        &self,
+        sequences: &[Vec<u32>],
         padded_s: usize,
-        mut dump: Option<&mut dyn FnMut(isize, &str, &Tensor)>)
-        -> Result<Tensor>
-    {
+        mut dump: Option<&mut StageSink<'_>>,
+    ) -> Result<Tensor> {
         ensure!(!sequences.is_empty(), "empty batch");
         let b = sequences.len();
         let s = padded_s;
-        ensure!(s <= self.engine.max_len, "sequence too long");
+        ensure!(s > 0 && s <= self.engine.max_len, "invalid sequence width");
         ensure!(sequences.iter().all(|x| !x.is_empty()), "empty sequence");
         ensure!(sequences.iter().all(|x| x.len() <= s), "padded_s too small");
-
+    
         let mut ids = vec![self.cfg.pad_token_id; b * s];
         for (row, seq) in sequences.iter().enumerate() {
             ensure!(
@@ -606,46 +753,59 @@ impl Model {
             );
             ensure!(
                 seq.iter().all(|&id| id != self.cfg.pad_token_id),
-                "input sequences must be unpadded and must not contain pad tokens"
+                "input sequences must not contain padding tokens"
             );
             ids[row * s..row * s + seq.len()].copy_from_slice(seq);
         }
+    
         let ids = Tensor::from_vec(ids, (b, s), &self.device)?;
         let mut x = self.embed.forward(&ids)?;
-        let mut ds = |li: isize, name: &str, t: &Tensor| {
-            if let Some(f) = dump.as_mut() { f(li, name, t); }
-        };
-        ds(-1, "embed_tokens", &x);
-
-        // Correctness path only: O(B*S*S) mask and attention scores.
-        // Bidirectional: only padding is masked. Every padded query still
-        // has valid keys, avoiding all-masked rows.
+        emit_stage(&mut dump, -1, "embed_tokens", &x)?;
+    
         let mut mask = vec![0f32; b * s * s];
         for (row, seq) in sequences.iter().enumerate() {
             for query in 0..s {
-                for key in 0..s {
-                    if key >= seq.len() {
-                        mask[(row * s + query) * s + key] = f32::NEG_INFINITY;
-                    }
+                for key in seq.len()..s {
+                    mask[(row * s + query) * s + key] = f32::NEG_INFINITY;
                 }
             }
         }
         let mask = Tensor::from_vec(mask, (b, 1, s, s), &self.device)?;
-
+    
         let nq = self.cfg.num_attention_heads;
         let nkv = self.cfg.num_key_value_heads;
         let d = self.cfg.head_dim;
         let q_width = nq * d;
         let kv_width = nkv * d;
-
+    
+        // These are the actual operands of the previous layer's residual add.
+        let mut previous_branch: Option<Tensor> = None;
+        let mut previous_residual: Option<Tensor> = None;
+    
         for (li, layer) in self.layers.iter().enumerate() {
-            ds(li as isize, "input_layernorm.hidden_in", &x);
+            let li = li as isize;
+    
+            match (&previous_branch, &previous_residual) {
+                (Some(branch), Some(residual)) => {
+                    emit_stage(&mut dump, li, "input_layernorm.hidden_in", branch)?;
+                    emit_stage(&mut dump, li, "input_layernorm.residual_in", residual)?;
+                }
+                (None, None) => {
+                    emit_stage(&mut dump, li, "input_layernorm.hidden_in", &x)?;
+                }
+                _ => bail!("inconsistent residual observation state"),
+            }
+    
             let n = crate::precision::rms(
-                &x, &layer.norm1, self.cfg.rms_norm_eps, self.precision)?;
-            ds(li as isize, "input_layernorm.normalized", &n);
+                &x, &layer.norm1, self.cfg.rms_norm_eps, self.precision,
+            )?;
+            emit_stage(&mut dump, li, "input_layernorm.normalized", &n)?;
+            emit_stage(&mut dump, li, "input_layernorm.residual", &x)?;
+    
             let qkv = linear3(&layer.qkv, &n)?;
-            ds(li as isize, "qkv.pre_rope", &qkv);
-
+            emit_stage(&mut dump, li, "qkv.pre_rope", &qkv)?;
+    
+            // All three views derive from the same immutable pre-rotation tensor.
             let q = qkv.narrow(2, 0, q_width)?
                 .reshape((b, s, nq, d))?
                 .transpose(1, 2)?;
@@ -655,78 +815,108 @@ impl Model {
             let v = qkv.narrow(2, q_width + kv_width, kv_width)?
                 .reshape((b, s, nkv, d))?
                 .transpose(1, 2)?;
-
-            ds(li as isize, "q.pre_rope", &q);
-            ds(li as isize, "k.pre_rope", &k);
-            ds(li as isize, "v.pre_rope", &v);
-
+    
+            emit_stage(&mut dump, li, "q.pre_rope", &q)?;
+            emit_stage(&mut dump, li, "k.pre_rope", &k)?;
+            emit_stage(&mut dump, li, "v.pre_rope", &v)?;
+    
+            if dump.is_some() {
+                let positions = Tensor::from_vec(
+                    (0..s).map(|p| p as u32).collect::<Vec<_>>(),
+                    s,
+                    &self.device,
+                )?;
+                let cos = self.cos.narrow(0, 0, s)?;
+                let sin = self.sin.narrow(0, 0, s)?;
+                let cache = Tensor::cat(&[&cos, &sin], 1)?;
+                emit_stage(&mut dump, li, "positions", &positions)?;
+                emit_stage(&mut dump, li, "rope.cos_sin_cache", &cache)?;
+            }
+    
             let q = self.rope(&q, s)?.contiguous()?;
             let k = self.rope(&k, s)?;
-            ds(li as isize, "q.post_rope", &q);
-            ds(li as isize, "k.post_rope", &k);
-            let k = self.repeat_kv(&k)?;
-            let v = self.repeat_kv(&v)?;
-
-            // vLLM mistral.py: q = (q * attn_scale) after RoPE, where
-            // scale(p) = 1 + beta * ln(1 + floor(p / original_max)).
+            emit_stage(&mut dump, li, "q.post_rope", &q)?;
+            emit_stage(&mut dump, li, "k.post_rope", &k)?;
+    
             let q = match self.llama4 {
                 Some((beta, original_max)) => {
                     let scales: Vec<f32> = (0..s)
                         .map(|p| {
-                            crate::yarn::llama4_attn_scale(beta, original_max, p)
-                                as f32
+                            crate::yarn::llama4_attn_scale(beta, original_max, p) as f32
                         })
                         .collect();
-                    let scale =
-                        Tensor::from_vec(scales, (1, 1, s, 1), &self.device)?;
+                    let scale = Tensor::from_vec(scales, (1, 1, s, 1), &self.device)?;
                     q.to_dtype(DType::F32)?
                         .broadcast_mul(&scale)?
                         .to_dtype(self.dtype)?
                 }
                 None => q,
             };
-            ds(li as isize, "q.attention_input", &q);
-            ds(li as isize, "k.attention_input", &k);
-            ds(li as isize, "v.attention_input", &v);
-
+    
+            emit_stage(&mut dump, li, "q.attention_input", &q)?;
+            emit_stage(&mut dump, li, "k.attention_input", &k)?;
+            emit_stage(&mut dump, li, "v.attention_input", &v)?;
+    
+            let k = self.repeat_kv(&k)?;
+            let v = self.repeat_kv(&v)?;
             let context = crate::precision::attention(
-                &q, &k, &v, &mask, self.precision)?;
-            let attention = context
-                .transpose(1, 2)?
+                &q, &k, &v, &mask, self.precision,
+            )?;
+            let attention = context.transpose(1, 2)?
                 .contiguous()?
                 .reshape((b, s, q_width))?;
-            ds(li as isize, "attention.pre_o_proj", &attention);
+    
+            // One canonical alias only. No attention.output duplicate.
+            emit_stage(&mut dump, li, "attention.pre_o_proj", &attention)?;
             let o = linear3(&layer.out, &attention)?;
-            ds(li as isize, "o_proj", &o);
-
+            emit_stage(&mut dump, li, "o_proj", &o)?;
+    
+            emit_stage(&mut dump, li, "post_attention_layernorm.hidden_in", &o)?;
+            emit_stage(&mut dump, li, "post_attention_layernorm.residual_in", &x)?;
             x = (&x + &o)?;
-            ds(li as isize, "residual.post_attention", &x);
-
-            ds(li as isize, "post_attention_layernorm.hidden_in", &x);
+            emit_stage(&mut dump, li, "residual.post_attention", &x)?;
+    
             let n = crate::precision::rms(
-                &x, &layer.norm2, self.cfg.rms_norm_eps, self.precision)?;
-            ds(li as isize, "post_attention_layernorm.normalized", &n);
+                &x, &layer.norm2, self.cfg.rms_norm_eps, self.precision,
+            )?;
+            emit_stage(&mut dump, li, "post_attention_layernorm.normalized", &n)?;
+            emit_stage(&mut dump, li, "post_attention_layernorm.residual", &x)?;
+    
             let gu = linear3(&layer.gate_up, &n)?;
-            ds(li as isize, "mlp.gate_up", &gu);
+            emit_stage(&mut dump, li, "mlp.gate_up", &gu)?;
             let gate = gu.narrow(2, 0, self.cfg.intermediate_size)?;
             let up = gu.narrow(
-                2, self.cfg.intermediate_size, self.cfg.intermediate_size
+                2, self.cfg.intermediate_size, self.cfg.intermediate_size,
             )?;
             let mlp = crate::precision::silu_mul(&gate, &up, self.precision)?;
-            ds(li as isize, "mlp.silu_mul", &mlp);
+            emit_stage(&mut dump, li, "mlp.silu_mul", &mlp)?;
             let down = linear3(&layer.down, &mlp)?;
-            ds(li as isize, "mlp.down", &down);
+            emit_stage(&mut dump, li, "mlp.down", &down)?;
+    
+            previous_residual = Some(x.clone());
+            previous_branch = Some(down.clone());
             x = (&x + &down)?;
-            ds(li as isize, "residual.post_down", &x);
+            emit_stage(&mut dump, li, "residual.post_down", &x)?;
         }
-
-        // Final RMSNorm is part of the decoder, before the embedding pooler.
-        // It cannot be moved after an average.
-        let x = crate::precision::rms(
-            &x, &self.final_norm, self.cfg.rms_norm_eps, self.precision)?
-            .to_dtype(DType::F32)?;
-        ds(-1, "final_norm", &x);
-        Ok(x)
+    
+        emit_stage(
+            &mut dump, -1, "norm.hidden_in",
+            previous_branch.as_ref().context("missing final branch")?,
+        )?;
+        emit_stage(
+            &mut dump, -1, "norm.residual_in",
+            previous_residual.as_ref().context("missing final residual")?,
+        )?;
+    
+        let normalized = crate::precision::rms(
+            &x, &self.final_norm, self.cfg.rms_norm_eps, self.precision,
+        )?;
+        emit_stage(&mut dump, -1, "norm.residual", &x)?;
+        emit_stage(&mut dump, -1, "norm.normalized", &normalized)?;
+    
+        let states = normalized.to_dtype(DType::F32)?;
+        emit_stage(&mut dump, -1, "final_norm", &states)?;
+        Ok(states)
     }
 
     pub fn forward(&self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
@@ -738,22 +928,6 @@ impl Model {
         Ok(pooled.broadcast_div(&norm)?.to_vec2::<f32>()?)
     }
 
-    /// Certified M2 serving route (ASTRO6 #10 Q2, option c): every
-    /// sequence is dispatched as an independent physical forward with
-    /// execution shape B=1, S=valid_token_count. Grouping, order, and
-    /// request size cannot alter a sequence's shape or arithmetic.
-    pub fn forward_serving(
-        &self, sequences: &[Vec<u32>]
-    ) -> Result<Vec<Vec<f32>>> {
-        ensure!(!sequences.is_empty(), "empty batch");
-        let mut rows = Vec::with_capacity(sequences.len());
-        for seq in sequences {
-            let out = self.forward(std::slice::from_ref(seq))?;
-            ensure!(out.len() == 1, "serving dispatch cardinality");
-            rows.push(out.into_iter().next().unwrap());
-        }
-        Ok(rows)
-    }
 
     /// Diagnostic: mean over valid token states after the final RMSNorm,
     /// before L2 normalization. Shape (b, hidden), FP32.
@@ -820,6 +994,182 @@ impl Model {
             );
         }
         Ok(out)
+    }
+}
+
+#[cfg(feature = "cuda")]
+pub struct IndependentExecutor {
+    model: Model,
+    math: crate::cuda_math::MathModePin,
+    manifest: std::fs::File,
+    next_forward: u64,
+    poisoned: bool,
+    _thread_affinity: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+#[cfg(feature = "cuda")]
+impl IndependentExecutor {
+    /// # Safety
+    ///
+    /// `math` must refer to the cuBLAS handle actually used by `device`.
+    /// The device, its stream, and its cuBLAS handle must not be used or
+    /// reconfigured by another owner while this executor exists.
+    ///
+    /// Construct and use this object on the dedicated executor thread.
+    /// The backend source audit required by MathModePin must cover the
+    /// locked Candle/cudarc build used here.
+    pub unsafe fn load(
+        dir: &Path,
+        device: Device,
+        engine: EngineConfig,
+        math: crate::cuda_math::MathModePin,
+        manifest_path: &Path,
+    ) -> Result<Self> {
+        use std::io::Write;
+
+        ensure!(matches!(device, Device::Cuda(_)), "CUDA required");
+        ensure!(engine.max_seqs > 0, "invalid max_seqs");
+        ensure!(engine.max_tokens >= engine.max_len, "one sequence must fit");
+        math.check()?;
+
+        let model = Model::load(dir, device, engine, DType::BF16)?
+            .with_precision(crate::precision::PrecisionProfile::F);
+
+        // create_new avoids accidentally appending a new run to an old manifest.
+        let mut manifest = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(manifest_path)?;
+
+        serde_json::to_writer(&mut manifest, &serde_json::json!({
+            "kind": "executor_start",
+            "execution_policy": "independent_sequence_v1",
+            "profile": "F",
+            "weights_and_projections": "BF16",
+            "norm_activation_attention": "widened_as_defined_by_F",
+            "physical_B": 1,
+            "physical_S": "valid_token_count",
+            "stream_policy": "single_owner_no_overlap",
+            "math": math.check()?
+        }))?;
+        manifest.write_all(b"\n")?;
+        manifest.flush()?;
+        manifest.sync_data()?;
+
+        Ok(Self {
+            model,
+            math,
+            manifest,
+            next_forward: 0,
+            poisoned: false,
+            _thread_affinity: std::marker::PhantomData,
+        })
+    }
+
+    fn record(&mut self, value: &serde_json::Value) -> Result<()> {
+        use std::io::Write;
+        serde_json::to_writer(&mut self.manifest, value)?;
+        self.manifest.write_all(b"\n")?;
+        self.manifest.flush()?;
+        self.manifest.sync_data()?;
+        Ok(())
+    }
+
+    pub fn forward_serving(&mut self, sequences: &[Vec<u32>])
+        -> Result<Vec<Vec<f32>>>
+    {
+        ensure!(!self.poisoned, "executor is poisoned; restart required");
+        ensure!(!sequences.is_empty(), "empty request");
+
+        // Validate the whole logical request before launching any of it.
+        for sequence in sequences {
+            ensure!(
+                !sequence.is_empty() && sequence.len() <= self.model.engine.max_len,
+                "invalid sequence length"
+            );
+            ensure!(
+                sequence.iter().all(|&id|
+                    id != self.model.cfg.pad_token_id
+                        && (id as usize) < self.model.cfg.vocab_size),
+                "padding or out-of-vocabulary token"
+            );
+        }
+
+        let mut rows = Vec::with_capacity(sequences.len());
+        for (request_row, sequence) in sequences.iter().enumerate() {
+            let math = self.math.check()?;
+            let forward_id = self.next_forward;
+            self.next_forward = self.next_forward.checked_add(1)
+                .context("forward counter overflow")?;
+            let digest = crate::precision::token_digest(sequence);
+
+            // Persist before launch, so an interrupted forward remains visible.
+            self.record(&serde_json::json!({
+                "kind": "physical_forward_begin",
+                "forward_id": forward_id,
+                "logical_request_row": request_row,
+                "token_sha256": digest,
+                "B": 1,
+                "S": sequence.len(),
+                "projection_rows": sequence.len(),
+                "profile": "F",
+                "math": math
+            }))?;
+
+            // Any execution, validation, or manifest failure prevents reuse.
+            self.poisoned = true;
+            let result = (|| -> Result<Vec<f32>> {
+                let output = self.model.forward(std::slice::from_ref(sequence))?;
+                ensure!(output.len() == 1, "physical forward cardinality");
+                let row = output.into_iter().next().unwrap();
+                ensure!(row.len() == 2048, "embedding width");
+                ensure!(row.iter().all(|x| x.is_finite()), "nonfinite embedding");
+                let norm = row.iter()
+                    .map(|&x| f64::from(x).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                ensure!((norm - 1.0).abs() <= 1e-5, "embedding norm {norm}");
+                // D2H above completes output production. Recheck configuration.
+                self.math.check()?;
+                Ok(row)
+            })();
+
+            match result {
+                Ok(row) => {
+                    let bytes: Vec<u8> = row.iter()
+                        .flat_map(|x| x.to_le_bytes())
+                        .collect();
+                    use sha2::{Digest, Sha256};
+                    self.record(&serde_json::json!({
+                        "kind": "physical_forward_end",
+                        "forward_id": forward_id,
+                        "token_sha256": digest,
+                        "B": 1,
+                        "S": sequence.len(),
+                        "profile": "F",
+                        "status": "ok",
+                        "output_sha256": format!("{:x}", Sha256::digest(&bytes)),
+                        "math": self.math.check()?
+                    }))?;
+                    self.poisoned = false;
+                    rows.push(row);
+                }
+                Err(error) => {
+                    self.record(&serde_json::json!({
+                        "kind": "physical_forward_end",
+                        "forward_id": forward_id,
+                        "token_sha256": digest,
+                        "B": 1,
+                        "S": sequence.len(),
+                        "profile": "F",
+                        "status": "error",
+                        "error": format!("{error:#}")
+                    }))?;
+                    return Err(error);
+                }
+            }
+        }
+        Ok(rows)
     }
 }
 

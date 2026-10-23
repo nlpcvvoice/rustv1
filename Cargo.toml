@@ -19,6 +19,10 @@ required-features = ["cuda"]
 name = "stage_dump"
 required-features = ["cuda"]
 
+[[bin]]
+name = "replay_common_input"
+required-features = ["cuda"]
+
 [dependencies]
 anyhow = "1"
 axum = "0.8"
