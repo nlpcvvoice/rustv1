@@ -100,6 +100,28 @@ fn semantic_config_check(raw: &Value) -> Result<()> {
                             semantic manifest is not closed"),
         }
     }
+    // Nested semantic objects are classified too: a new nested option
+    // must not be silently ignored (ASTRO6 #7).
+    for (field, known) in [
+        ("rope_parameters", &[
+            "rope_type", "type", "rope_theta", "factor",
+            "original_max_position_embeddings", "beta_fast", "beta_slow",
+            "apply_yarn_scaling", "attn_factor"][..],
+        ),
+        ("llama_4_scaling", &[
+            "beta", "original_max_position_embeddings"][..],
+        ),
+    ] {
+        if let Some(v) = obj.get(field) {
+            if let Some(inner) = v.as_object() {
+                for key in inner.keys() {
+                    ensure!(known.contains(&key.as_str()),
+                        "unknown {field}.{key}: nested semantic manifest \
+                         is not closed");
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -714,11 +736,28 @@ mod guard_tests {
 
     #[test]
     fn unknown_config_key_rejected() {
+        // Genuinely unknown top-level key (not a recognized switch).
+        let raw: Value = serde_json::from_str(&format!(
+            "{{{BASE},\"mystery_switch\":true}}")).unwrap();
+        assert!(semantic_config_check(&raw).is_err());
+        // Recognized switch with an unsupported value.
         let raw: Value = serde_json::from_str(&format!(
             "{{{BASE},\"sliding_window\":4096}}")).unwrap();
         assert!(semantic_config_check(&raw).is_err());
+        // Unknown nested key inside rope_parameters.
         let raw: Value = serde_json::from_str(&format!(
-            "{{{BASE},\"sliding_window\":null,\"model_type\":\"ministral3\"}}")).unwrap();
+            "{{{BASE},{YARN},\"mystery_nested\":1}}")).unwrap();
+        assert!(semantic_config_check(&raw).is_err());
+        let raw: Value = serde_json::from_str(&format!(
+            "{{{BASE},\"rope_parameters\":{{\"rope_type\":\"yarn\",\
+             \"rope_theta\":1000000.0,\"factor\":16.0,\
+             \"original_max_position_embeddings\":16384,\"beta_fast\":32.0,\
+             \"beta_slow\":1.0,\"apply_yarn_scaling\":false,\
+             \"mystery_inner\":true}}}}")).unwrap();
+        assert!(semantic_config_check(&raw).is_err());
+        // Fully valid frozen-contract configuration.
+        let raw: Value = serde_json::from_str(&format!(
+            "{{{BASE},{YARN},\"sliding_window\":null,\"model_type\":\"ministral3\"}}")).unwrap();
         assert!(semantic_config_check(&raw).is_ok());
     }
 

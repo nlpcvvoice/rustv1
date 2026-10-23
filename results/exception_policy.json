@@ -1,9 +1,9 @@
 {
- "version": 1,
+ "version": 2,
  "samples": [
   {
    "index": 5,
-   "ids_sha256": "a54fdfd61509e6cab8b06c13d2da113d32be971e9149ec37ac0cf5d649ca2957",
+   "ids_sha256": "39cb38600b6e929f898da28e923855deb2c8a9aafb401437c08b8862b57fd297",
    "description": "token sequence [12107,1541,1058,52528] repeated to length 1023 (4 unique ids)",
    "original_failure": "Rust-vs-vLLM cosine 0.99791 (gate 0.999) on 2026-10-22 CPU FP32 run",
    "reference_evidence": {
@@ -39,8 +39,9 @@
     "|norm-1| <= 1e-5",
     "no crash",
     "no cross-request contamination"
-   ]
+   ],
+   "ids_serialization": "sha256 over consecutive little-endian u32 token ids"
   }
  ],
- "cross_capture_note": "vLLM singleton embeddings are not bit-identical across captures: observed max_abs <= 1.2e-08 (f32 rounding-level kernel nondeterminism), cosine 1.00000000"
+ "cross_capture_note": "Across the two 2026-10-22 L4 captures, maximum absolute singleton-output difference was <= 1.2e-08 with reported cosine 1.00000000 (observed variation; cause not isolated)."
 }

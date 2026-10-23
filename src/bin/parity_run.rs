@@ -17,7 +17,7 @@
 //     (set from measured vLLM 0.25.0 self-sensitivity 0.99992 / 0.0026)
 //   repeated identical shape: cosine > 0.999999, bit identity reported
 
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use candle_core::Device;
 use rustv1::model::{EngineConfig, Model};
 use sha2::{Digest, Sha256};
@@ -60,6 +60,8 @@ fn validate_row(v: &[f32], label: &str) -> Result<()> {
 }
 
 fn compare(emb: &[f32], reference: &[f32]) -> Result<(f64, f64)> {
+    ensure!(emb.len() == reference.len(),
+        "compare: dimension mismatch {} vs {}", emb.len(), reference.len());
     let dot: f64 = emb.iter().zip(reference)
         .map(|(a, b)| *a as f64 * *b as f64).sum();
     let na = norm_f64(emb);
@@ -80,9 +82,10 @@ fn bit_identical(a: &[f32], b: &[f32]) -> bool {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    ensure!(args.len() == 6 || args.len() == 7,
+    ensure!(args.len() == 7,
         "usage: parity_run MODEL_DIR PROMPTS_JSON REFERENCE_F32 \
-         TOKENIZER_JSON TOKENIZATION_JSON [DIAGNOSTICS_JSON]");
+         TOKENIZER_JSON TOKENIZATION_JSON EXCEPTION_POLICY_JSON");
+    println!("acceptance command: {}", args[1..].join(" "));
 
     let dir = PathBuf::from(&args[1]);
     let prompts: Vec<Vec<u32>> = serde_json::from_slice(&std::fs::read(&args[2])?)?;
@@ -98,6 +101,8 @@ fn main() -> Result<()> {
         ("engine.json", dir.join("engine.json")),
         ("prompts.json", PathBuf::from(&args[2])),
         ("reference.f32", PathBuf::from(&args[3])),
+        ("tokenization_cases.json", PathBuf::from(&args[5])),
+        ("exception_policy.json", PathBuf::from(&args[6])),
         ("Cargo.lock", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock")),
     ] {
         println!("sha256 {name} = {}", sha256_file(&p)?);
@@ -128,13 +133,32 @@ fn main() -> Result<()> {
     }
     println!("singletons done in {:.1}s", started.elapsed().as_secs_f64());
 
-    // Named, versioned exception policy (ASTRO6 #6): listed samples are
-    // validated fail-closed and measured, but their cosine/max_abs are
-    // reported as diagnostics, not gates.
-    let diagnostics: Vec<usize> = match args.get(6) {
-        Some(p) => serde_json::from_slice(&std::fs::read(p)?)?,
-        None => Vec::new(),
-    };
+    // Enforced named, versioned exception policy (ASTRO6 #7): each
+    // exception must match its index and the digest of its token
+    // sequence, defined as SHA-256 over consecutive little-endian u32
+    // ids. Duplicate, out-of-range, or digest-mismatched indices are
+    // rejected: the exemption cannot be detached from the approved
+    // sample identity.
+    let policy: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&args[6])?)?;
+    ensure!(policy["version"].as_u64() == Some(2),
+        "exception policy version must be 2");
+    let mut diagnostics: Vec<usize> = Vec::new();
+    for s in policy["samples"].as_array().context("policy: samples array")? {
+        let idx = s["index"].as_u64().context("policy: index")? as usize;
+        ensure!(idx < prompts.len(), "policy: index {idx} out of range");
+        ensure!(!diagnostics.contains(&idx), "policy: duplicate index {idx}");
+        let want = s["ids_sha256"].as_str().context("policy: ids_sha256")?;
+        let mut h = Sha256::new();
+        for t in &prompts[idx] { h.update(t.to_le_bytes()); }
+        let got = format!("{:x}", h.finalize());
+        ensure!(got == want,
+            "policy: sample {idx} token digest mismatch (got {got}); \
+             the corpus no longer matches the approved exception identity");
+        println!("exception v{} enforced: sample {idx} bound to digest {got}",
+            policy["version"].as_u64().unwrap());
+        diagnostics.push(idx);
+    }
 
     for (i, emb) in single.iter().enumerate() {
         let (cosine, max_abs) =
@@ -241,9 +265,15 @@ fn main() -> Result<()> {
     let seqs: Vec<_> = g0.iter().map(|&i| prompts[i].clone()).collect();
     let a = model.forward(&seqs)?;
     let b = model.forward(&seqs)?;
+    ensure!(a.len() == g0.len(), "repeat A: {} rows for {} sequences",
+        a.len(), g0.len());
+    ensure!(b.len() == g0.len(), "repeat B: {} rows for {} sequences",
+        b.len(), g0.len());
     let mut rep_worst_cos = 1.0f64;
     let mut bits_same = true;
     for k in 0..g0.len() {
+        validate_row(&a[k], &format!("repeat A {k}"))?;
+        validate_row(&b[k], &format!("repeat B {k}"))?;
         let (c, _) = compare(&a[k], &b[k])?;
         rep_worst_cos = rep_worst_cos.min(c);
         bits_same &= bit_identical(&a[k], &b[k]);
@@ -296,8 +326,18 @@ fn main() -> Result<()> {
     let mut altered = base.clone();
     *altered.last_mut().unwrap() = 9990;
     let states = model.forward_states(&[base.clone(), altered])?;
-    ensure!(states.len() == 2 && states[0].len() == base.len(),
-        "bidirectionality: unexpected state shape");
+    ensure!(states.len() == 2, "bidirectionality: {} sequences", states.len());
+    ensure!(states[0].len() == base.len() && states[1].len() == base.len(),
+        "bidirectionality: state lengths {:?} != {}",
+        states.iter().map(Vec::len).collect::<Vec<_>>(), base.len());
+    for (si, seq) in states.iter().enumerate() {
+        for (ti, row) in seq.iter().enumerate() {
+            ensure!(row.len() == 2048,
+                "bidirectionality: state {si}/{ti} dim {} != 2048", row.len());
+            ensure!(row.iter().all(|v| v.is_finite()),
+                "bidirectionality: non-finite state {si}/{ti}");
+        }
+    }
     let d0: f64 = states[0][0].iter().zip(&states[1][0])
         .map(|(a, b)| (a - b).abs() as f64)
         .fold(0.0f64, f64::max);
@@ -305,6 +345,8 @@ fn main() -> Result<()> {
         .zip(&states[1][base.len() - 1])
         .map(|(a, b)| (a - b).abs() as f64)
         .fold(0.0f64, f64::max);
+    ensure!(d0.is_finite() && dlast.is_finite(),
+        "bidirectionality: non-finite difference metric");
     let bidir_ok = d0 > 1e-4 && dlast > 1e-4;
     println!("bidirectionality: token0_maxdiff={d0:.5} lasttoken_maxdiff={dlast:.5} \
              -> {}", if bidir_ok { "PASS" } else { "FAIL" });
