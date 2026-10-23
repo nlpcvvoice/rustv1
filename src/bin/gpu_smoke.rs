@@ -170,7 +170,7 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "cuda")]
 fn cuda_is_available() -> bool {
-    candle_core::cuda_is_available().unwrap_or(false)
+    candle_core::utils::cuda_is_available()
 }
 
 #[cfg(not(feature = "cuda"))]
