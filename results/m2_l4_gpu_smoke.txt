@@ -1,0 +1,28 @@
+   Compiling candle-core v0.9.2
+rustc -V -> rustc 1.99.1 (58cf8f9c3 2026-10-13)
+cargo -V -> cargo 1.99.1 (5f94df478 2026-08-27)
+nvcc --version -> nvcc: NVIDIA (R) Cuda compiler driver
+nvidia-smi -> Fri Oct 23 04:56:10 2026       
+cudarc: name = "cudarc"
+name = "cudarc"
+candle-core: name = "candle-core"
+device: Cuda(CudaDevice(DeviceId(1)))
+op q_proj 2048->3072: cosine=0.999999 max_abs=0.00024 PASS
+op k_proj 2048->1024: cosine=0.999999 max_abs=0.00022 PASS
+op o_proj 3072->2048: cosine=0.999999 max_abs=0.00024 PASS
+op gate_proj 2048->6144: cosine=0.999999 max_abs=0.00024 PASS
+op down_proj 6144->2048: cosine=0.999997 max_abs=0.00072 PASS
+op attention QK^T (b2 h24 s257 d128): cosine=0.999999 max_abs=0.00006 PASS
+op attention PV: cosine=0.999999 max_abs=0.00002 PASS
+op GQA kv repeat 8->24: cosine=1.000000 max_abs=0.00000 PASS
+op embedding gather bf16: cosine=1.000000 max_abs=0.00000 PASS
+op fp32 row sum: cosine=1.000000 max_abs=0.00000 PASS
+op fp32 softmax: cosine=1.000000 max_abs=0.00000 PASS
+op bf16<->f32 roundtrip: cosine=1.000000 max_abs=0.00006 PASS
+model loaded on CUDA in BF16
+model smoke sample 0 (len 1): finite, norm_dev=6.02e-9 PASS
+model smoke sample 1 (len 2): finite, norm_dev=3.35e-8 PASS
+model smoke sample 10 (len 5): finite, norm_dev=5.15e-8 PASS
+model smoke sample 2 (len 255): finite, norm_dev=2.18e-8 PASS
+max-shape B=4 S=1024: PASS in 0.7s
+GPU-SMOKE: PASS
