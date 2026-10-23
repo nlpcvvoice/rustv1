@@ -82,10 +82,36 @@ fn bit_identical(a: &[f32], b: &[f32]) -> bool {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    ensure!(args.len() == 7,
+    ensure!(args.len() == 7 || args.len() == 8,
         "usage: parity_run MODEL_DIR PROMPTS_JSON REFERENCE_F32 \
-         TOKENIZER_JSON TOKENIZATION_JSON EXCEPTION_POLICY_JSON");
+         TOKENIZER_JSON TOKENIZATION_JSON EXCEPTION_POLICY_JSON \
+         [DEVICE,DTYPE  e.g. cpu,f32 | cuda,bf16]");
     println!("acceptance command: {}", args[1..].join(" "));
+
+    // Explicit device and dtype selection; no silent fallback.
+    let (device_name, dtype_name) = if args.len() == 8 {
+        let spec = args[7].clone();
+        let mut it = spec.split(',');
+        (it.next().unwrap_or("").to_string(),
+         it.next().unwrap_or("").to_string())
+    } else {
+        ("cpu".to_string(), "f32".to_string())
+    };
+    let device = match device_name.as_str() {
+        "cpu" => Device::Cpu,
+        "cuda" => {
+            ensure!(candle_core::utils::cuda_is_available(),
+                "device 'cuda' requested but CUDA backend not compiled in");
+            Device::new_cuda(0)?
+        }
+        other => bail!("unknown device '{other}': use cpu or cuda"),
+    };
+    let dtype = match dtype_name.as_str() {
+        "f32" => candle_core::DType::F32,
+        "bf16" => candle_core::DType::BF16,
+        other => bail!("unknown dtype '{other}': use f32 or bf16"),
+    };
+    println!("execution target: device={device:?} dtype={dtype:?}");
 
     let dir = PathBuf::from(&args[1]);
     let prompts: Vec<Vec<u32>> = serde_json::from_slice(&std::fs::read(&args[2])?)?;
@@ -115,8 +141,7 @@ fn main() -> Result<()> {
 
     let engine: EngineConfig =
         serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
-    let model = Model::load(&dir, Device::Cpu, engine.clone(),
-        candle_core::DType::F32)?;
+    let model = Model::load(&dir, device, engine.clone(), dtype)?;
     println!("loaded; {} prompts, lengths {:?}", prompts.len(),
         prompts.iter().map(Vec::len).collect::<Vec<_>>());
 
