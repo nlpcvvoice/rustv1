@@ -62,6 +62,47 @@ struct Index {
     weight_map: BTreeMap<String, String>,
 }
 
+/// Semantic manifest for config.json (ASTRO6 #6): every key must either be
+/// consumed by `Config`, verified inert here, or be recognized metadata.
+/// Unknown keys fail closed: a parameter-free semantic change (for example
+/// a sliding-window setting) must not pass unnoticed.
+fn semantic_config_check(raw: &Value) -> Result<()> {
+    let obj = raw.as_object().context("config.json must be an object")?;
+    const CONSUMED: &[&str] = &[
+        "hidden_size", "intermediate_size", "num_hidden_layers",
+        "num_attention_heads", "num_key_value_heads", "head_dim",
+        "vocab_size", "rms_norm_eps", "hidden_act",
+        "max_position_embeddings", "is_causal", "pooling",
+        "pad_token_id", "rope_theta", "rope_parameters",
+        "rope_scaling", "attention_bias", "mlp_bias",
+        "ada_rms_norm_t_cond", "llama_4_scaling",
+    ];
+    for (key, value) in obj {
+        if CONSUMED.contains(&key.as_str()) {
+            continue;
+        }
+        match key.as_str() {
+            "sliding_window" => ensure!(value.is_null(),
+                "sliding_window={value} changes attention semantics"),
+            "attention_dropout" => ensure!(
+                value.is_null() || value.as_f64() == Some(0.0),
+                "nonzero attention_dropout is unsupported"),
+            "bos_token_id" => ensure!(value.as_u64() == Some(1),
+                "unexpected bos_token_id {value}"),
+            "eos_token_id" => ensure!(value.as_u64() == Some(2),
+                "unexpected eos_token_id {value}"),
+            "dtype" => ensure!(value.as_str() == Some("bfloat16"),
+                "unexpected dtype {value}"),
+            "use_cache" | "tie_word_embeddings" | "initializer_range"
+            | "architectures" | "model_type" | "nemo_version"
+            | "transformers_version" => {}
+            other => bail!("unknown config key '{other}': \
+                            semantic manifest is not closed"),
+        }
+    }
+    Ok(())
+}
+
 fn weight_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let index = dir.join("model.safetensors.index.json");
     if !index.exists() {
@@ -357,8 +398,9 @@ impl Model {
     pub fn load(dir: &Path, device: Device, engine: EngineConfig, dtype: DType)
         -> Result<Self>
     {
-        let cfg: Config =
-            serde_json::from_slice(&fs::read(dir.join("config.json"))?)?;
+        let config_bytes = fs::read(dir.join("config.json"))?;
+        semantic_config_check(&serde_json::from_slice(&config_bytes)?)?;
+        let cfg: Config = serde_json::from_slice(&config_bytes)?;
 
         ensure!(
             (cfg.hidden_size, cfg.num_attention_heads, cfg.head_dim)
@@ -662,7 +704,22 @@ mod guard_tests {
         "beta_fast":32.0,"beta_slow":1.0,"apply_yarn_scaling":false}"#;
 
     fn cfg(extra: &str) -> Config {
-        serde_json::from_str(&format!("{{{BASE},{extra}}}")).unwrap()
+        let inner = if extra.is_empty() {
+            BASE.to_string()
+        } else {
+            format!("{BASE},{extra}")
+        };
+        serde_json::from_str(&format!("{{{inner}}}")).unwrap()
+    }
+
+    #[test]
+    fn unknown_config_key_rejected() {
+        let raw: Value = serde_json::from_str(&format!(
+            "{{{BASE},\"sliding_window\":4096}}")).unwrap();
+        assert!(semantic_config_check(&raw).is_err());
+        let raw: Value = serde_json::from_str(&format!(
+            "{{{BASE},\"sliding_window\":null,\"model_type\":\"ministral3\"}}")).unwrap();
+        assert!(semantic_config_check(&raw).is_ok());
     }
 
     #[test]
