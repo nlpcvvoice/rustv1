@@ -141,8 +141,8 @@ fn main() -> Result<()> {
     let model = Model::load(&dir, dev.clone(), engine.clone(), DType::BF16)?;
     println!("model loaded on CUDA in BF16");
 
-    let prompts: Vec<Vec<u32>> = serde_json::from_slice(&std::fs::read(
-        "results/prompts.json"))?;
+    let prompts: Vec<Vec<u32>> = serde_json::from_slice(
+        &std::fs::read("results/prompts.json")?)?;
     for &i in &[0usize, 1, 10, 2] {
         let out = model.forward(&[prompts[i].clone()])?;
         ensure!(out.len() == 1 && out[0].len() == 2048, "smoke sample {i}: shape");
