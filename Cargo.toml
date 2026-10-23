@@ -7,6 +7,10 @@ edition = "2021"
 default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda"]
 
+[[bin]]
+name = "gpu_smoke"
+required-features = ["cuda"]
+
 [dependencies]
 anyhow = "1"
 axum = "0.8"
