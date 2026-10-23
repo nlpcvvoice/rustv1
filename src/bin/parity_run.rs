@@ -17,7 +17,7 @@
 //     (set from measured vLLM 0.25.0 self-sensitivity 0.99992 / 0.0026)
 //   repeated identical shape: cosine > 0.999999, bit identity reported
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use candle_core::Device;
 use rustv1::model::{EngineConfig, Model};
 use sha2::{Digest, Sha256};
