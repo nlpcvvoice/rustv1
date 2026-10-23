@@ -131,9 +131,10 @@ fn main() -> Result<()> {
     // Named, versioned exception policy (ASTRO6 #6): listed samples are
     // validated fail-closed and measured, but their cosine/max_abs are
     // reported as diagnostics, not gates.
-    let diagnostics: Vec<usize> = args.get(6)
-        .map(|p| Ok(serde_json::from_slice(&std::fs::read(p)?)?))
-        .transpose()?.unwrap_or_default();
+    let diagnostics: Vec<usize> = match args.get(6) {
+        Some(p) => serde_json::from_slice(&std::fs::read(p)?)?,
+        None => Vec::new(),
+    };
 
     for (i, emb) in single.iter().enumerate() {
         let (cosine, max_abs) =
