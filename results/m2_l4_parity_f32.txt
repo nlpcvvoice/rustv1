@@ -1,0 +1,45 @@
+acceptance command: /root/.cache/huggingface/hub/models--nvidia--Nemotron-3-Embed-1B-BF16/snapshots/c0c9fea93ea424587517f2c59e20db9f1d6bf615 /work/rustv1/results/prompts.json /work/rustv1/results/ref_single.f32 /root/.cache/huggingface/hub/models--nvidia--Nemotron-3-Embed-1B-BF16/snapshots/c0c9fea93ea424587517f2c59e20db9f1d6bf615/tokenizer.json /work/rustv1/results/tokenization_cases.json /work/rustv1/results/exception_policy.json cuda,f32
+execution target: device=Cuda(CudaDevice(DeviceId(1))) dtype=F32
+sha256 model.safetensors = f959c3b04e66b42de280bfb97c140cb7e0bfe25e3ecb0b4464c68a8436b2d04f
+sha256 config.json = 56964141409866da7ce7d2d88b5b20c44558f5e916b318ad3abd2c694b2cb5f7
+sha256 tokenizer.json = 797410dfb649a5b9ba92bc4fef7dbf4022d00e73de6867c4ac199a8846439421
+sha256 engine.json = 35ef2d5036298153b15069462d9bed3deb945286d0a5c144fde2515e48e58c3e
+sha256 prompts.json = 9e7baebbdb7e38f7b6e33530399d4ef6e2e22c2ee5717c159ddb9c9725099c15
+sha256 reference.f32 = 9f3d7c18b8c7c1e401dc784de0fdb1dc51bc80188445d84ab3eb0fe65de83f37
+sha256 tokenization_cases.json = 5c705286084fa7deec13a1c7708519712bfc01ffbb90f9950f3413b28ffbb13d
+sha256 exception_policy.json = 822084998251c242d21dea25a74e4be84bc8b2006e22065f34566af457e6d806
+sha256 Cargo.lock = 2a8a1d0787056a7e2aa76bcfa7a91ba6dd5df653fef387f31ea76fa64cbace7f
+singletons done in 15.8s
+exception v2 enforced: sample 5 bound to digest 39cb38600b6e929f898da28e923855deb2c8a9aafb401437c08b8862b57fd297
+sample 0: len=1 cosine=0.999980 max_abs=0.00155 PASS
+sample 1: len=2 cosine=0.999697 max_abs=0.00918 PASS
+sample 2: len=255 cosine=0.999983 max_abs=0.00142 PASS
+sample 3: len=256 cosine=0.999980 max_abs=0.00434 PASS
+sample 4: len=257 cosine=0.999993 max_abs=0.00081 PASS
+sample 5: len=1023 cosine=0.997911 max_abs=0.00716 DIAGNOSTIC (not gated; see exception_policy.json)
+sample 6: len=1024 cosine=0.999993 max_abs=0.00084 PASS
+sample 7: len=10 cosine=0.999917 max_abs=0.00225 PASS
+sample 8: len=512 cosine=0.999894 max_abs=0.00201 PASS
+sample 9: len=1 cosine=0.999949 max_abs=0.00149 PASS
+sample 10: len=5 cosine=0.999986 max_abs=0.00116 PASS
+sample 11: len=10 cosine=0.999978 max_abs=0.00285 PASS
+sample 12: len=5 cosine=0.999968 max_abs=0.00270 PASS
+sample 13: len=6 cosine=0.999959 max_abs=0.00613 PASS
+sample 14: len=7 cosine=0.999975 max_abs=0.00195 PASS
+sample 15: len=11 cosine=0.999988 max_abs=0.00062 PASS
+sample 16: len=1 cosine=0.999925 max_abs=0.00168 PASS
+sample 17: len=7 cosine=0.999930 max_abs=0.00134 PASS
+sample 18: len=300 cosine=0.999893 max_abs=0.00161 PASS
+sample 19: len=1023 cosine=0.999993 max_abs=0.00031 PASS
+sample 20: len=6 cosine=0.999985 max_abs=0.00082 PASS
+sample 21: len=8 cosine=0.999660 max_abs=0.00451 PASS
+batch suite grouped: 5 groups, sizes [5, 4, 8, 4, 1]
+batch suite reversed: 5 groups, sizes [4, 8, 4, 4, 2]
+batch suite shuffled: 4 groups, sizes [4, 8, 4, 6]
+repeated-shape: worst_cosine=1.0000000000 bit_identical=true
+batch invariance: n=68 worst_cosine=1.00000000 worst_max_abs=0.000002
+batch-invariance: PASS
+invalid-inputs: empty_batch=true empty_seq=true pad=true long=true oov=true -> PASS
+tokenizer-equality: 7 cases -> PASS
+bidirectionality: token0_maxdiff=4.87551 lasttoken_maxdiff=12.62445 -> PASS
+M1-ACCEPTANCE: PASS
