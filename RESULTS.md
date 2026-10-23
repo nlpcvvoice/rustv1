@@ -8,13 +8,15 @@ Implementation: this repo, Candle, CPU, FP32 oracle (BF16 weights
 losslessly widened; Candle CPU has no BF16 matmul). BF16 compute on CUDA
 is M2.
 
-Claim (per the corrected acceptance protocol):
+Claim (externally reviewed and approved wording):
 
 > M1 passes the frozen token-ID embedding acceptance suite using CPU FP32
 > arithmetic over losslessly widened BF16 checkpoint weights, against
-> saved vLLM 0.25.0 BF16 outputs, for lengths 1–1024. 21 retained gating
-> samples pass; one additional stress case is tracked under a documented
-> reference-batch-sensitivity exception (`results/exception_policy.json`).
+> saved vLLM 0.25.0 BF16 outputs. The suite contains 22 samples spanning
+> lengths 1–1024: 21 pass the frozen cross-engine numerical gates, and
+> one exact stress sample is retained under exception policy v2 (bound to
+> the sample by a SHA-256 digest over its little-endian token ids). All
+> samples pass the applicable structural and batch-invariance checks.
 
 This is not CUDA certification, not bit-exact parity, and not general
 model-quality validation.
@@ -24,7 +26,7 @@ Frozen gates: dim 2048, all finite, |norm-1| <= 1e-5 (FP64), cosine >
 <= 0.005) were set from measured vLLM self-sensitivity (0.99992 / 0.0026),
 not guessed.
 
-| Suite (corrected harness, commit 4b1ae7c) | Result |
+| Suite (corrected harness, commit 6a6748a, `--locked` build) | Result |
 |---|---|
 | Table parity (RoPE inv_freq / cos-sin / llama_4_scaling vs vLLM formulas) | inv_freq max_rel 1.2e-7; cos/sin max_abs 8.3e-5; llama_4_scaling bit-exact |
 | Gating corpus, 21 singleton prompts (len 1-1024: boundaries, EOS, repeats incl. two distinct repeated ids, varied natural text, special-token literals, punctuation) | 21/21 PASS; worst cosine 0.999660; max_abs <= 0.0092 |
@@ -45,7 +47,8 @@ Cross-capture note: vLLM singleton embeddings are not bit-identical
 across captures (observed max_abs <= 1.2e-08, cosine 1.00000000 — f32
 rounding-level kernel nondeterminism).
 
-Raw outputs: `results/m1_acceptance_v2_results.txt` (current),
+Raw outputs: `results/m1_acceptance_v3_results.txt` (current, locked),
+`results/cargo_test_results.txt` (9/9, `cargo test --locked`),
 `results/m1_core_results.txt`, `results/table_parity_results.txt`.
 Artifact SHA-256 manifest is printed by the acceptance run itself
 (checkpoint, config, tokenizer, engine, corpus, reference, lockfile).
@@ -55,10 +58,9 @@ Artifact SHA-256 manifest is printed by the acceptance run itself
 ```
 pip install vllm==0.25.0 tokenizers numpy   # reference capture only
 modal run tools/capture_expanded.py         # regenerates corpus + reference (base64 tar in log)
-echo '[5]' > diagnostics.json
-cargo run --release --bin parity_run -- <MODEL_DIR> results/prompts.json \
-    results/ref_single.f32 <MODEL_DIR>/tokenizer.json \
-    results/tokenization_cases.json diagnostics.json
+cargo run --release --locked --bin parity_run -- <MODEL_DIR> \
+    results/prompts.json results/ref_single.f32 <MODEL_DIR>/tokenizer.json \
+    results/tokenization_cases.json results/exception_policy.json
 ```
 
 `<MODEL_DIR>` is a local copy of the Hugging Face checkpoint with
