@@ -1,0 +1,22 @@
+=== cargo test rc= 0
+running 9 tests
+test model::guard_tests::malformed_alias_rejected ... ok
+test model::guard_tests::default_rope_type_rejected_for_frozen_contract ... ok
+test model::guard_tests::manifest_has_146_entries ... ok
+test model::guard_tests::malformed_attn_factor_rejected ... ok
+test model::guard_tests::missing_rope_parameters_rejected ... ok
+test model::guard_tests::missing_theta_rejected_and_wrong_theta_rejected ... ok
+test model::guard_tests::unknown_config_key_rejected ... ok
+test yarn::yarn_tests::llama4_scale_identity_below_boundary ... ok
+test yarn::yarn_tests::standard_yarn_transition ... ok
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

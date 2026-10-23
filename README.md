@@ -5,11 +5,14 @@ Goal: close the long-input-sequence throughput gap measured in
 [embedding-serving-bench](https://github.com/nlpcvvoice/embedding-serving-bench)
 at ISL=1024, by building a small, fully owned inference stack.
 
-Status: **M1 correctness gate passed on the CPU FP32 oracle** — 17-prompt
-corpus vs vLLM 0.25.0 BF16 reference: all cosine > 0.9996 (worst 0.999697),
-max_abs <= 0.0092, |norm-1| <= 5.2e-7; batch invariance bit-exact; invalid
-inputs rejected; bidirectionality confirmed at stage level. Evidence and
-reproduction steps: [RESULTS.md](RESULTS.md) (tag `v0.1.0-m1`). GPU (BF16/CUDA)
+Status: **M1 acceptance passed on the CPU FP32 oracle (corrected harness)** —
+21 gating samples vs vLLM 0.25.0 BF16 reference: all cosine > 0.9996
+(worst 0.999660), max_abs <= 0.0092; one stress case tracked under a
+documented reference-batch-sensitivity exception; batch invariance under
+serving budgets (n=68, worst cosine 1.00000000); repeated-shape runs
+bit-identical; tokenizer equality 7/7; invalid inputs rejected;
+bidirectionality confirmed at stage level. Evidence, artifact hashes, and
+reproduction steps: [RESULTS.md](RESULTS.md). GPU (BF16/CUDA)
 path is next. The loader is fail-closed: it
 refuses to run until every model-contract detail is verified against the
 reference implementation. See [Contract](#contract) and [Open items](#open-items).

@@ -1,10 +1,12 @@
 import modal
 
-# Expanded M1 corpus: build 17 prompts (length boundaries, repeated tokens,
-# EOS cases, natural text), capture vLLM 0.25.0 BF16 singleton embeddings,
-# and measure vLLM's own batch sensitivity. Outputs echoed as base64 tar.
+# Expanded M1 corpus v2 (ASTRO6 #6 test-matrix gaps): 22 prompts =
+# previous 17 + second repeated-token ID (short/long) + genuinely varied
+# 1023 text + special-token-literal + whitespace/punctuation cases.
+# Captures vLLM 0.25.0 BF16 singleton embeddings, vLLM batch sensitivity,
+# and reference tokenization cases for Rust tokenizer equality.
 
-app = modal.App("rustv1-expanded-capture")
+app = modal.App("rustv1-expanded-capture-v2")
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -19,6 +21,7 @@ def capture() -> None:
     import base64
     import json
     import subprocess
+    import pathlib
 
     from huggingface_hub import snapshot_download
     from tokenizers import Tokenizer
@@ -54,6 +57,44 @@ def capture() -> None:
         "a",
     ]:
         prompts.append(tok.encode(text, add_special_tokens=False).ids)
+
+    # New per ASTRO6 #6: second repeated-token ID, short and long.
+    prompts.append([918] * 7)
+    prompts.append([918] * 300)
+
+    # Genuinely varied long input (distinct sentences, truncated to 1023).
+    sentences = [
+        "The capital of France is Paris. ",
+        "The Andromeda galaxy spans roughly one hundred thousand light years. ",
+        "Wheat yields rose three percent in the northern counties. ",
+        "Quarterly churn improved to two point one percent after the pilot. ",
+        "Rust ownership rules prevent data races at compile time. ",
+        "The Ganges delta floods seasonally each monsoon. ",
+        "Bond yields climbed after the central bank held rates steady. ",
+        "Attention weighs every token against every other token. ",
+        "Olive oil production dropped in Andalusia this year. ",
+        "The compiler rejected the borrow that outlived its owner. ",
+        "Hurricane tracks shifted northward over the decade. ",
+        "Sample variance divides the sum of squares by n minus one. ",
+        "The port of Rotterdam handled record container volume. ",
+        "Gradient descent steps shrink near a well conditioned minimum. ",
+        "Lunar tides affect estuary salinity twice a day. ",
+        "The audit found three misclassified refunds per thousand. ",
+        "Monte Carlo error decreases like one over root n. ",
+        "The orchard planted dwarf rootstock along the ridge. ",
+        "Precision and recall trade off under threshold changes. ",
+        "Comet tails always point away from the sun. ",
+        "Soil moisture sensors triggered irrigation twice in July. ",
+    ]
+    varied = "".join(sentences * 5)
+    s_var = tok.encode(varied, add_special_tokens=False).ids[:1023]
+    s_var = [12 if t == 11 else t for t in s_var]
+    assert len(s_var) == 1023 and 11 not in s_var
+    prompts.append(s_var)
+
+    # Special-token-literal and whitespace/punctuation cases.
+    prompts.append(tok.encode("passage: <s> hello", add_special_tokens=False).ids)
+    prompts.append(tok.encode("...  !! ?? ,, --  ", add_special_tokens=False).ids)
 
     for i, p in enumerate(prompts):
         assert p and 11 not in p and len(p) <= 1024 and max(p) < 131072, i
@@ -92,7 +133,19 @@ def capture() -> None:
     }
     print(json.dumps(meta, indent=1), flush=True)
 
-    import pathlib
+    tok_cases = [
+        {"text": t, "ids": tok.encode(t, add_special_tokens=False).ids}
+        for t in [
+            "passage: hello",
+            "query: what is Rust?",
+            "passage: 你好，世界",
+            "passage:   spaces   and... punctuation!!!",
+            "passage: <s> hello",
+            "a",
+            "passage: a.b,c!!",
+        ]
+    ]
+
     out = pathlib.Path("/work/expanded"); out.mkdir(parents=True)
     (out / "prompts.json").write_text(json.dumps(prompts))
     single.tofile(out / "ref_single.f32")
@@ -100,6 +153,7 @@ def capture() -> None:
     b_rev.tofile(out / "ref_batch_rev.f32")
     b_dup.tofile(out / "ref_batch_dup.f32")
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
+    (out / "tokenization_cases.json").write_text(json.dumps(tok_cases))
 
     subprocess.run(["tar", "czf", "/work/exp.tgz", "-C", "/work", "expanded"], check=True)
     blob = base64.b64encode(open("/work/exp.tgz", "rb").read()).decode()
