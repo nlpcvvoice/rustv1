@@ -1487,6 +1487,7 @@ dependencies = [
  "bytes",
  "candle-core",
  "candle-nn",
+ "half",
  "http-body-util",
  "hyper",
  "hyper-util",

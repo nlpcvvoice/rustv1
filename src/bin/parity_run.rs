@@ -82,21 +82,21 @@ fn bit_identical(a: &[f32], b: &[f32]) -> bool {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    ensure!(args.len() == 7 || args.len() == 8,
+    ensure!(args.len() == 9,
         "usage: parity_run MODEL_DIR PROMPTS_JSON REFERENCE_F32 \
          TOKENIZER_JSON TOKENIZATION_JSON EXCEPTION_POLICY_JSON \
-         [DEVICE,DTYPE  e.g. cpu,f32 | cuda,bf16]");
+         DEVICE,DTYPE  PRECISION_PROFILE(A..F)");
     println!("acceptance command: {}", args[1..].join(" "));
 
-    // Explicit device and dtype selection; no silent fallback.
-    let (device_name, dtype_name) = if args.len() == 8 {
-        let spec = args[7].clone();
-        let mut it = spec.split(',');
+    // Explicit device, dtype, and precision profile; no silent defaults.
+    let (device_name, dtype_name) = {
+        let mut it = args[7].split(',');
         (it.next().unwrap_or("").to_string(),
          it.next().unwrap_or("").to_string())
-    } else {
-        ("cpu".to_string(), "f32".to_string())
     };
+    let profile: rustv1::precision::PrecisionProfile =
+        args[8].parse()?;
+    println!("precision_profile: {profile:?}");
     let device = match device_name.as_str() {
         "cpu" => Device::Cpu,
         "cuda" => {
@@ -141,7 +141,8 @@ fn main() -> Result<()> {
 
     let engine: EngineConfig =
         serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
-    let model = Model::load(&dir, device, engine.clone(), dtype)?;
+    let model = Model::load(&dir, device, engine.clone(), dtype)?
+        .with_precision(profile);
     println!("loaded; {} prompts, lengths {:?}", prompts.len(),
         prompts.iter().map(Vec::len).collect::<Vec<_>>());
 
