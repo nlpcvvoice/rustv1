@@ -132,7 +132,7 @@ fn main() -> Result<()> {
     // validated fail-closed and measured, but their cosine/max_abs are
     // reported as diagnostics, not gates.
     let diagnostics: Vec<usize> = args.get(6)
-        .map(|p| serde_json::from_slice(&std::fs::read(p)?))
+        .map(|p| Ok(serde_json::from_slice(&std::fs::read(p)?)?))
         .transpose()?.unwrap_or_default();
 
     for (i, emb) in single.iter().enumerate() {
