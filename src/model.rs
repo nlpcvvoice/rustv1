@@ -570,14 +570,26 @@ impl Model {
     /// token states after the final RMSNorm in FP32, shape (b, s, h).
     fn run_decoder(&self, sequences: &[Vec<u32>]) -> Result<Tensor> {
         let s = sequences.iter().map(Vec::len).max().unwrap();
-        self.run_decoder_padded(sequences, s)
+        self.run_decoder_padded(sequences, s, None)
+    }
+
+    /// Stage-level observation for the Q2 stage-comparison protocol:
+    /// emits (layer_index, stage_name, tensor) at vLLM-pairable
+    /// boundaries. layer_index -1 marks global stages.
+    pub fn run_decoder_dump(
+        &self, sequences: &[Vec<u32>], padded_s: usize,
+        sink: &mut dyn FnMut(isize, &str, &Tensor)
+    ) -> Result<Tensor> {
+        self.run_decoder_padded(sequences, padded_s, Some(sink))
     }
 
     /// Diagnostic entry point (ASTRO6 #9): padded_s overrides the
     /// allocation/mask/reshape width. Valid lengths still drive masking
     /// and pooling; no tokens are appended to valid sequences.
     fn run_decoder_padded(&self, sequences: &[Vec<u32>],
-        padded_s: usize) -> Result<Tensor>
+        padded_s: usize,
+        mut dump: Option<&mut dyn FnMut(isize, &str, &Tensor)>)
+        -> Result<Tensor>
     {
         ensure!(!sequences.is_empty(), "empty batch");
         let b = sequences.len();
@@ -600,6 +612,10 @@ impl Model {
         }
         let ids = Tensor::from_vec(ids, (b, s), &self.device)?;
         let mut x = self.embed.forward(&ids)?;
+        let mut ds = |li: isize, name: &str, t: &Tensor| {
+            if let Some(f) = dump.as_mut() { f(li, name, t); }
+        };
+        ds(-1, "embed_tokens", &x);
 
         // Correctness path only: O(B*S*S) mask and attention scores.
         // Bidirectional: only padding is masked. Every padded query still
@@ -622,10 +638,13 @@ impl Model {
         let q_width = nq * d;
         let kv_width = nkv * d;
 
-        for layer in &self.layers {
+        for (li, layer) in self.layers.iter().enumerate() {
+            ds(li as isize, "input_layernorm.hidden_in", &x);
             let n = crate::precision::rms(
                 &x, &layer.norm1, self.cfg.rms_norm_eps, self.precision)?;
+            ds(li as isize, "input_layernorm.normalized", &n);
             let qkv = linear3(&layer.qkv, &n)?;
+            ds(li as isize, "qkv.pre_rope", &qkv);
 
             let q = qkv.narrow(2, 0, q_width)?
                 .reshape((b, s, nq, d))?
@@ -637,8 +656,15 @@ impl Model {
                 .reshape((b, s, nkv, d))?
                 .transpose(1, 2)?;
 
+            ds(li as isize, "q.pre_rope", &q);
+            ds(li as isize, "k.pre_rope", &k);
+            ds(li as isize, "v.pre_rope", &v);
+
             let q = self.rope(&q, s)?.contiguous()?;
-            let k = self.repeat_kv(&self.rope(&k, s)?)?;
+            let k = self.rope(&k, s)?;
+            ds(li as isize, "q.post_rope", &q);
+            ds(li as isize, "k.post_rope", &k);
+            let k = self.repeat_kv(&k)?;
             let v = self.repeat_kv(&v)?;
 
             // vLLM mistral.py: q = (q * attn_scale) after RoPE, where
@@ -659,6 +685,9 @@ impl Model {
                 }
                 None => q,
             };
+            ds(li as isize, "q.attention_input", &q);
+            ds(li as isize, "k.attention_input", &k);
+            ds(li as isize, "v.attention_input", &v);
 
             let context = crate::precision::attention(
                 &q, &k, &v, &mask, self.precision)?;
@@ -666,18 +695,29 @@ impl Model {
                 .transpose(1, 2)?
                 .contiguous()?
                 .reshape((b, s, q_width))?;
+            ds(li as isize, "attention.pre_o_proj", &attention);
+            let o = linear3(&layer.out, &attention)?;
+            ds(li as isize, "o_proj", &o);
 
-            x = (&x + &linear3(&layer.out, &attention)?)?;
+            x = (&x + &o)?;
+            ds(li as isize, "residual.post_attention", &x);
 
+            ds(li as isize, "post_attention_layernorm.hidden_in", &x);
             let n = crate::precision::rms(
                 &x, &layer.norm2, self.cfg.rms_norm_eps, self.precision)?;
+            ds(li as isize, "post_attention_layernorm.normalized", &n);
             let gu = linear3(&layer.gate_up, &n)?;
+            ds(li as isize, "mlp.gate_up", &gu);
             let gate = gu.narrow(2, 0, self.cfg.intermediate_size)?;
             let up = gu.narrow(
                 2, self.cfg.intermediate_size, self.cfg.intermediate_size
             )?;
             let mlp = crate::precision::silu_mul(&gate, &up, self.precision)?;
-            x = (&x + &linear3(&layer.down, &mlp)?)?;
+            ds(li as isize, "mlp.silu_mul", &mlp);
+            let down = linear3(&layer.down, &mlp)?;
+            ds(li as isize, "mlp.down", &down);
+            x = (&x + &down)?;
+            ds(li as isize, "residual.post_down", &x);
         }
 
         // Final RMSNorm is part of the decoder, before the embedding pooler.
@@ -685,6 +725,7 @@ impl Model {
         let x = crate::precision::rms(
             &x, &self.final_norm, self.cfg.rms_norm_eps, self.precision)?
             .to_dtype(DType::F32)?;
+        ds(-1, "final_norm", &x);
         Ok(x)
     }
 
@@ -695,6 +736,23 @@ impl Model {
             .sqrt()?
             .clamp(1e-12, f64::INFINITY)?;
         Ok(pooled.broadcast_div(&norm)?.to_vec2::<f32>()?)
+    }
+
+    /// Certified M2 serving route (ASTRO6 #10 Q2, option c): every
+    /// sequence is dispatched as an independent physical forward with
+    /// execution shape B=1, S=valid_token_count. Grouping, order, and
+    /// request size cannot alter a sequence's shape or arithmetic.
+    pub fn forward_serving(
+        &self, sequences: &[Vec<u32>]
+    ) -> Result<Vec<Vec<f32>>> {
+        ensure!(!sequences.is_empty(), "empty batch");
+        let mut rows = Vec::with_capacity(sequences.len());
+        for seq in sequences {
+            let out = self.forward(std::slice::from_ref(seq))?;
+            ensure!(out.len() == 1, "serving dispatch cardinality");
+            rows.push(out.into_iter().next().unwrap());
+        }
+        Ok(rows)
     }
 
     /// Diagnostic: mean over valid token states after the final RMSNorm,
@@ -717,7 +775,7 @@ impl Model {
     pub fn forward_with_padded_s(&self, sequences: &[Vec<u32>],
         padded_s: usize) -> Result<Vec<Vec<f32>>>
     {
-        let x = self.run_decoder_padded(sequences, padded_s)?;
+        let x = self.run_decoder_padded(sequences, padded_s, None)?;
         let mut rows = Vec::with_capacity(sequences.len());
         for (row, seq) in sequences.iter().enumerate() {
             let valid = x.i(row)?.narrow(0, 0, seq.len())?;

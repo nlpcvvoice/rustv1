@@ -1,0 +1,15 @@
+{
+ "version": 1,
+ "scope": "M2 CUDA BF16 PrecisionProfile F independent-sequence executor",
+ "samples": [],
+ "resolution_notes": [
+  {
+   "index": 5,
+   "ids_sha256": "39cb38600b6e929f898da28e923855deb2c8a9aafb401437c08b8862b57fd297",
+   "note": "The exact sample-5 stress case previously tracked under a CUDA-L4 development exception passes the frozen cross-engine gates under PrecisionProfile F. The exception is retired for the M2 F independent-sequence profile. The sample remains in all applicable acceptance suites. This resolution does not establish that earlier discrepancies originated solely in the reference.",
+   "authority": "ASTRO6 consultation #10, Q3 (2026-10-23)",
+   "identity_correction": "sample 5 is 1023 tokens; 255 was the repetition count of its 4-token motif"
+  }
+ ],
+ "m1_policy_unchanged_at": "v0.3.0-m1"
+}
