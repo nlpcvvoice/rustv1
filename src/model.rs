@@ -106,7 +106,8 @@ fn semantic_config_check(raw: &Value) -> Result<()> {
         ("rope_parameters", &[
             "rope_type", "type", "rope_theta", "factor",
             "original_max_position_embeddings", "beta_fast", "beta_slow",
-            "apply_yarn_scaling", "attn_factor"][..],
+            "apply_yarn_scaling", "attn_factor",
+            "llama_4_scaling_beta", "mscale", "mscale_all_dim"][..],
         ),
         ("llama_4_scaling", &[
             "beta", "original_max_position_embeddings"][..],
@@ -114,10 +115,23 @@ fn semantic_config_check(raw: &Value) -> Result<()> {
     ] {
         if let Some(v) = obj.get(field) {
             if let Some(inner) = v.as_object() {
-                for key in inner.keys() {
+                for (key, value) in inner {
                     ensure!(known.contains(&key.as_str()),
                         "unknown {field}.{key}: nested semantic manifest \
                          is not closed");
+                    if field == "rope_parameters" {
+                        match key.as_str() {
+                            "llama_4_scaling_beta" => ensure!(
+                                value.as_f64() == Some(0.1),
+                                "unexpected rope_parameters.llama_4_scaling_beta {value}"),
+                            // Neutral only while apply_yarn_scaling=false.
+                            "mscale" | "mscale_all_dim" => ensure!(
+                                value.as_f64() == Some(1.0),
+                                "non-neutral {field}.{key}={value} while \
+                                 apply_yarn_scaling must be false"),
+                            _ => {}
+                        }
+                    }
                 }
             }
         }
