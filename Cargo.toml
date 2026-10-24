@@ -23,6 +23,10 @@ required-features = ["cuda"]
 name = "replay_common_input"
 required-features = ["cuda"]
 
+[[bin]]
+name = "accept_m2"
+required-features = ["cuda"]
+
 [dependencies]
 anyhow = "1"
 axum = "0.8"
