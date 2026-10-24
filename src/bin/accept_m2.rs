@@ -10,7 +10,7 @@ use std::{
 const WIDTH: usize = 2048;
 const SAMPLES: usize = 22;
 const AUDIT_PATH: &str =
-    "audits/cuda_math/candle-0.9.2_cudarc-0.17.8.v1.json";
+    "audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json";
 
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -211,7 +211,7 @@ fn audit_identity() -> Result<(String, Value)> {
         "audit candle-core version mismatch"
     );
     ensure!(
-        audit["crates"]["cudarc"]["version"].as_str() == Some("0.17.8"),
+        audit["crates"]["cudarc"]["version"].as_str() == Some("0.19.10"),
         "audit cudarc version mismatch"
     );
 

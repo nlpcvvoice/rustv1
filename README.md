@@ -76,7 +76,7 @@ Standalone CUDA M2 acceptance (requires the validated audit artifact selected
 via `RV1_CUDA_MATH_AUDIT`, see below):
 
 ```sh
-export RV1_CUDA_MATH_AUDIT="sha256:<64-lowercase-hex-of-artifact-bytes>:audits/cuda_math/candle-0.9.2_cudarc-0.17.8.v1.json"
+export RV1_CUDA_MATH_AUDIT="sha256:<64-lowercase-hex-of-artifact-bytes>:audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json"
 cargo run --release --locked --features cuda --bin accept_m2 -- \
   <MODEL_DIR> m2_executor_manifest.jsonl results/exception_policy_m2.json
 ```
@@ -112,14 +112,14 @@ not imply the other. Cross-device bit identity is not assumed.
 The versioned source-audit artifact is:
 
 ```text
-audits/cuda_math/candle-0.9.2_cudarc-0.17.8.v1.json
+audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json
 ```
 
 Select the completed, validated artifact before starting CUDA execution. The
 environment value binds the artifact path to the SHA-256 of its exact bytes:
 
 ```sh
-AUDIT=audits/cuda_math/candle-0.9.2_cudarc-0.17.8.v1.json
+AUDIT=audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json
 export RV1_CUDA_MATH_AUDIT="sha256:$(sha256sum "$AUDIT" | cut -d' ' -f1):$AUDIT"
 ```
 
