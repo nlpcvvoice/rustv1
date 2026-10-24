@@ -107,7 +107,11 @@ fn main() -> Result<()> {
         "cuda" => {
             ensure!(candle_core::utils::cuda_is_available(),
                 "device 'cuda' requested but CUDA backend not compiled in");
-            Device::new_cuda(0)?
+            // The CUDA acceptance branch below never uses this handle:
+            // m2_route::open pins the math policy before creating the
+            // process's only CudaDevice. Placeholder avoids a pre-pin
+            // device allocation.
+            Device::Cpu
         }
         other => bail!("unknown device '{other}': use cpu or cuda"),
     };
