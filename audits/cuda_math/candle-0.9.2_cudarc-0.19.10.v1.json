@@ -1,0 +1,1523 @@
+{
+  "schema": "rustv1.cuda_math_source_audit.v1",
+  "artifact_kind": "cuda_math_source_audit",
+  "artifact_revision": "v1",
+  "intended_path": "audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json",
+  "status": "accepted",
+  "status_reason": "All examined_regions verified line-by-line against locked source bytes; provenance filled; Cargo.lock binding computed; feature tree preserved.",
+  "audited_at_utc": "2026-10-24T04:38:44+00:00",
+  "auditor": "gpt-6-astra (consultations #14-#16) with Qwopus line-by-line verification against locked sources",
+  "repository_revision": "5863dc87f0713483030848b185c4beda0fa8fe72",
+  "cargo_lock_sha256": "355e65ee3d21d6e38140762d4c53075000208b51ec8a63e403460f8b57e21ba7",
+  "cargo_tree_features": {
+    "artifact_path": "audits/cuda_math/cargo_tree_cuda.txt",
+    "sha256": "42f4af7cfe6f9f9711962642de1d4fc2a892718b10a119b6008c699f72f698ba"
+  },
+  "crates": {
+    "candle-core": {
+      "version": "0.9.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "cargo_lock_checksum": "c15b675b80d994b2eadb20a4bbe434eabeb454eac3ee5e2b4cf6f147ee9be091"
+    },
+    "cudarc": {
+      "version": "0.19.10",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "cargo_lock_checksum": "7359bf1de037ddada72729c3acec9b040f3468400c6e9e740b01ba0cd2e89562",
+      "note": "Integrator reports that Cargo.lock retains an orphan cudarc 0.17.8 package entry. It is absent from the supplied resolved cargo tree --features cuda --locked graph, which resolves candle-core 0.9.2 to cudarc 0.19.10."
+    },
+    "candle-nn": {
+      "version": "0.9.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "cargo_lock_checksum": "3045fa9e7aef8567d209a27d56b692f60b96f4d0569f4c3011f8ca6715c65e03"
+    },
+    "candle-kernels": {
+      "version": "0.9.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "cargo_lock_checksum": "b8455f84bd810047c7c41216683c1020c915a9f8a740b3b0eabdd4fb2fbaa660"
+    }
+  },
+  "schema_compatibility": {
+    "requested_schema": "consultation-13-R3",
+    "required_fields_populated": true,
+    "structurally_reviewed_against_supplied_schema": true,
+    "validated": false,
+    "reason": "R3 field names and types are represented. Authorized provenance placeholders remain and are not valid final timestamps or digests. No mechanical schema-validation or driver-execution result is claimed.",
+    "driver_validation_scope": [
+      "Validates sha256 identity syntax and the designated repository-relative artifact path.",
+      "Hashes artifact bytes and compares the digest with the supplied identity.",
+      "Checks the schema string, candle-core version 0.9.2 and cudarc version 0.19.10.",
+      "Compares cargo_lock_sha256 with the current Cargo.lock hash.",
+      "Does not rederive source conclusions, verify source-file hashes, validate all R3 fields, establish feature resolution or verify a signature."
+    ]
+  },
+  "verification": {
+    "source_review_against_supplied_line_numbered_text_completed": true,
+    "qwopus_line_by_line_verification_completed": true,
+    "all_region_line_numbers_populated": true,
+    "mechanical_region_boundary_verification_completed": false,
+    "source_hashes_verified": true,
+    "locked_dependency_identity_verified": true,
+    "repository_call_sites_reviewed_in_supplied_sources": true,
+    "repository_call_sites_verified_against_checkout": false,
+    "runtime_dispatch_observed": false,
+    "schema_validation_completed": false,
+    "signed": true,
+    "auditor_attribution_note": "The requested auditor identifier is retained. It does not attest that the pending Qwopus or integrator verification has already occurred.",
+    "repository_call_sites_verified": true
+  },
+  "provenance": {
+    "repository_revision": "FILLED_BY_INTEGRATOR",
+    "timestamp_utc": "FILLED_BY_INTEGRATOR",
+    "cargo_lock": {
+      "path": "Cargo.lock",
+      "sha256": "FILLED_BY_INTEGRATOR"
+    },
+    "cargo_tree": {
+      "command": "cargo tree --locked --features cuda -e features",
+      "artifact": "FILLED_BY_INTEGRATOR",
+      "sha256": "FILLED_BY_INTEGRATOR"
+    },
+    "dependency_resolution_note": "candle-core 0.9.2 declares cudarc version 0.19.0, and the supplied cargo tree --features cuda --locked resolves that dependency to cudarc 0.19.10. This audit covers that 0.19.10 implementation. Integrator reports that the retained cudarc 0.17.8 lockfile entry is orphaned and absent from the enabled graph. Preserve and hash the feature-expanded tree to bind the CUDA features used by the audited build.",
+    "source_hash_note": "All source-file hashes remain integrator placeholders. Verify exact source bytes, including the six supplied registry hash expectations, and compute hashes for every additional examined file."
+  },
+  "scope": {
+    "precision_profile": "F",
+    "entry_point": "rustv1/src/m2_route.rs::open followed by IndependentExecutor::forward_serving",
+    "serving_route": "in_process_token_ID_API",
+    "http_certified": false,
+    "physical_sequence_batch_size": 1,
+    "sequence_length_min": 1,
+    "sequence_length_max": 1024,
+    "sequence_length_constraint": "Also bounded by the loaded engine.max_len.",
+    "operand_storage_classes": [
+      "dense BF16",
+      "dense F32"
+    ],
+    "model_layers": 16,
+    "query_heads": 24,
+    "kv_heads_before_repeat": 8,
+    "head_dimension": 128,
+    "attention_shape": "[1,24,S,128] after KV repetition",
+    "attention_cublas_batch_count": 24,
+    "projection_cublas_batch_count": 1,
+    "claim_boundary": "Source-level application dispatch, operand/output storage types, layouts, requested compute type and terminal cuBLAS API under the operational restrictions. No claim about proprietary cuBLAS internals or completed runtime numerical acceptance.",
+    "excluded_entry_points": [
+      "Direct Model use outside IndependentExecutor",
+      "Model::replay_common_input and its dense FP32 diagnostic oracle",
+      "Diagnostic padded multi-sequence execution",
+      "Other precision profiles",
+      "HTTP serving routes",
+      "Backward or training execution"
+    ],
+    "frozen_reference_sample_count": 22,
+    "frozen_reference_device": "L4",
+    "frozen_reference_cosine_requirement": "> 0.999",
+    "frozen_reference_max_abs_requirement": "<= 0.01",
+    "reference_requirements_status": "Retained acceptance requirements from consultation #14; not runtime results established by this source audit.",
+    "exception_list": []
+  },
+  "source_files": [
+    {
+      "id": "candle_cuda",
+      "owner": "candle-core",
+      "version_or_revision": "0.9.2",
+      "path": "src/cuda_backend/mod.rs",
+      "sha256": "bc2bd5fe3702bfccb49d64af07dc4197013d6617c720643cd2a14b718f4134e2",
+      "examined_regions": [
+        {
+          "symbol": "gemm_config",
+          "first_line": 1343,
+          "last_line": 1433,
+          "finding": "Builds StridedBatchedConfig using cuBLAS dimensions (n,m,k), ldc=n and layout-dependent transpose flags and batch strides. Unsupported layouts return MatMulNonContiguous; no alternate GEMM backend is selected."
+        },
+        {
+          "symbol": "<CudaStorage as BackendStorage>::matmul",
+          "first_line": 2188,
+          "last_line": 2242,
+          "finding": "BF16/BF16 and F32/F32 allocate same-dtype outputs and call Candle-local strided-batched helpers with reversed rhs/lhs arguments. F16 has its own local helper; F64 uses the cudarc Gemm trait. Other pairs error. There is no b=1, m=1 or short-sequence plain-GEMM switch."
+        },
+        {
+          "symbol": "MM_F16_REDUCED_PRECISION",
+          "first_line": 2473,
+          "last_line": 2474,
+          "finding": "Process-global AtomicBool initialized false; not a cuBLAS handle attribute."
+        },
+        {
+          "symbol": "MM_BF16_REDUCED_PRECISION",
+          "first_line": 2475,
+          "last_line": 2476,
+          "finding": "Process-global AtomicBool initialized false; not immutable."
+        },
+        {
+          "symbol": "MM_F32_REDUCED_PRECISION",
+          "first_line": 2477,
+          "last_line": 2478,
+          "finding": "Process-global AtomicBool initialized false; not immutable."
+        },
+        {
+          "symbol": "gemm_reduced_precision_f32",
+          "first_line": 2482,
+          "last_line": 2484,
+          "finding": "Loads MM_F32_REDUCED_PRECISION with Relaxed ordering."
+        },
+        {
+          "symbol": "set_gemm_reduced_precision_f32",
+          "first_line": 2488,
+          "last_line": 2490,
+          "finding": "Public setter stores MM_F32_REDUCED_PRECISION with Relaxed ordering."
+        },
+        {
+          "symbol": "gemm_reduced_precision_f16",
+          "first_line": 2494,
+          "last_line": 2496,
+          "finding": "Loads MM_F16_REDUCED_PRECISION with Relaxed ordering."
+        },
+        {
+          "symbol": "set_gemm_reduced_precision_f16",
+          "first_line": 2500,
+          "last_line": 2502,
+          "finding": "Public setter stores MM_F16_REDUCED_PRECISION with Relaxed ordering."
+        },
+        {
+          "symbol": "gemm_reduced_precision_bf16",
+          "first_line": 2506,
+          "last_line": 2508,
+          "finding": "Loads MM_BF16_REDUCED_PRECISION with Relaxed ordering."
+        },
+        {
+          "symbol": "set_gemm_reduced_precision_bf16",
+          "first_line": 2512,
+          "last_line": 2514,
+          "finding": "Public setter stores MM_BF16_REDUCED_PRECISION with Relaxed ordering."
+        },
+        {
+          "symbol": "gemm_strided_batched_f32",
+          "first_line": 2516,
+          "last_line": 2564,
+          "finding": "False getter selects CUBLAS_COMPUTE_32F; true selects CUBLAS_COMPUTE_32F_FAST_TF32. Passes CUDA_R_32F for A/B/C, host F32 alpha/beta and CUBLAS_GEMM_DEFAULT_TENSOR_OP directly to cudarc's result-layer gemm_strided_batched_ex."
+        },
+        {
+          "symbol": "gemm_strided_batched_f16",
+          "first_line": 2566,
+          "last_line": 2623,
+          "finding": "False getter selects COMPUTE_32F with F32 alpha/beta; true selects COMPUTE_16F with F16 alpha/beta. A/B/C use CUDA_R_16F. Not reached by the audited profile F route."
+        },
+        {
+          "symbol": "gemm_strided_batched_bf16",
+          "first_line": 2625,
+          "last_line": 2682,
+          "finding": "False getter selects CUBLAS_COMPUTE_32F; true selects CUBLAS_COMPUTE_32F_FAST_16BF. Both use host F32 alpha/beta, CUDA_R_16BF A/B/C and CUBLAS_GEMM_DEFAULT_TENSOR_OP through the result-layer strided-batched Ex call."
+        },
+        {
+          "symbol": "<CudaStorage as BackendStorage>::to_dtype",
+          "first_line": 1507,
+          "last_line": 1646,
+          "finding": "Launches cast kernels using the source layout and allocates target-typed storage. Conversion is separate from GEMM compute-mode selection."
+        },
+        {
+          "symbol": "kernel_name",
+          "first_line": 97,
+          "last_line": 100,
+          "finding": "Appends T::DTYPE.as_str() to the kernel root; the F32 softmax specialization is named softmax_f32."
+        }
+      ]
+    },
+    {
+      "id": "candle_device",
+      "owner": "candle-core",
+      "version_or_revision": "0.9.2",
+      "path": "src/cuda_backend/device.rs",
+      "sha256": "40f4bb9512f9001a983802129b6cfee16381a24b7876f13ba02cd49b6dfe1925",
+      "examined_regions": [
+        {
+          "symbol": "CudaDevice",
+          "first_line": 33,
+          "last_line": 43,
+          "finding": "Cloneable device owns shared context, stream and Arc<CudaBlas>; cloning does not create exclusive handle ownership."
+        },
+        {
+          "symbol": "CudaDevice::cublas_handle",
+          "first_line": 247,
+          "last_line": 249,
+          "finding": "Returns a cloned Arc<CudaBlas>; callers can access the handle."
+        },
+        {
+          "symbol": "CudaDevice::new_with_stream",
+          "first_line": 253,
+          "last_line": 271,
+          "finding": "Creates a new stream and CudaBlas on it without explicit math-mode or atomics-mode pinning."
+        },
+        {
+          "symbol": "<CudaDevice as BackendDevice>::new",
+          "first_line": 277,
+          "last_line": 295,
+          "finding": "Uses the context default stream and CudaBlas::new; no explicit math-mode or atomics-mode pin appears."
+        },
+        {
+          "symbol": "CudaDevice::compile",
+          "first_line": 176,
+          "last_line": 196,
+          "finding": "Feature-gated ug compilation requests use_fast_math=true. Not invoked by the audited model GEMM call chain."
+        },
+        {
+          "symbol": "CudaDevice::get_or_load_custom_func",
+          "first_line": 202,
+          "last_line": 225,
+          "finding": "Supports custom PTX modules. Not the loader used by the examined softmax implementation or dense GEMM helpers."
+        },
+        {
+          "symbol": "CudaDevice::get_or_load_func",
+          "first_line": 227,
+          "last_line": 245,
+          "finding": "Loads the named function from a Candle kernel module's PTX and associates it with this device's stream. Used by SoftmaxLastDim::cuda_fwd."
+        },
+        {
+          "symbol": "CudaFunc::builder",
+          "first_line": 148,
+          "last_line": 150,
+          "finding": "Creates a launch builder on the CudaFunc's stored stream."
+        }
+      ]
+    },
+    {
+      "id": "candle_tensor",
+      "owner": "candle-core",
+      "version_or_revision": "0.9.2",
+      "path": "src/tensor.rs",
+      "sha256": "25b95a8deecffa87d55325d9ae258b9552778a7eb24a653b7c1438340aa21487",
+      "examined_regions": [
+        {
+          "symbol": "from_storage",
+          "first_line": 159,
+          "last_line": 177,
+          "finding": "Derives dtype and device from storage and creates a contiguous layout."
+        },
+        {
+          "symbol": "Tensor::matmul",
+          "first_line": 1495,
+          "last_line": 1538,
+          "finding": "Requires equal rank >=2, derives m/k/n, short-circuits empty output or k=0 to zeros, checks k and batch products, and calls Storage::matmul. Rank-2 projections have batch count 1; [1,24,S,D] attention has batch count 24."
+        },
+        {
+          "symbol": "Tensor::broadcast_matmul",
+          "first_line": 1545,
+          "last_line": 1560,
+          "finding": "All four broadcast cases ultimately call Tensor::matmul, materializing newly broadcast operands. The audited linear3 route supplies rank-2 inputs and does not use this method."
+        },
+        {
+          "symbol": "Tensor::to_dtype",
+          "first_line": 2453,
+          "last_line": 2462,
+          "finding": "Same dtype preserves the existing layout through a shallow clone; different dtype converts storage and constructs a contiguous tensor. BF16-to-F32 attention casts therefore materialize contiguous F32 operands."
+        },
+        {
+          "symbol": "Tensor::t",
+          "first_line": 2250,
+          "last_line": 2261,
+          "finding": "Transposes the final two dimensions."
+        },
+        {
+          "symbol": "Tensor::transpose",
+          "first_line": 2265,
+          "last_line": 2282,
+          "finding": "Shares storage and changes layout, preserving dtype. Linear's transposed weight is a view rather than a forced contiguous copy."
+        },
+        {
+          "symbol": "Tensor::contiguous",
+          "first_line": 2466,
+          "last_line": 2477,
+          "finding": "Preserves already-contiguous tensors or copies strided storage to a contiguous layout without changing dtype."
+        },
+        {
+          "symbol": "Tensor::reshape",
+          "first_line": 2523,
+          "last_line": 2551,
+          "finding": "Checks element count and returns a contiguous view or copies strided storage. linear3's reshape supplies a contiguous rank-2 projection input."
+        }
+      ]
+    },
+    {
+      "id": "candle_storage",
+      "owner": "candle-core",
+      "version_or_revision": "0.9.2",
+      "path": "src/storage.rs",
+      "sha256": "6241271357ee152f0244e47053f40de811832fca89e8aece6420bbc1b5c485c4",
+      "examined_regions": [
+        {
+          "symbol": "Storage::same_device",
+          "first_line": 47,
+          "last_line": 65,
+          "finding": "For CUDA compares device locations, not exclusive stream or handle ownership. This check does not enforce the application's no-overlap restriction."
+        },
+        {
+          "symbol": "Storage::same_dtype",
+          "first_line": 67,
+          "last_line": 75,
+          "finding": "Rejects dtype mismatch; matmul does not implicitly promote mixed BF16/F32 operands."
+        },
+        {
+          "symbol": "Storage::matmul",
+          "first_line": 769,
+          "last_line": 798,
+          "finding": "Checks device and dtype, then CUDA/CUDA directly invokes lhs.matmul(rhs,bmnk,lhs_layout,rhs_layout) and wraps the CUDA result. There is no CPU fallback, cuBLASLt selection, quantized dispatch or shape-dependent alternative."
+        },
+        {
+          "symbol": "Storage::apply_op1",
+          "first_line": 205,
+          "last_line": 220,
+          "finding": "CUDA storage invokes the CustomOp1 object's cuda_fwd and wraps its returned CUDA storage. This is the storage-level custom-op dispatch for SoftmaxLastDim, not a GEMM dispatch."
+        },
+        {
+          "symbol": "Storage::to_dtype",
+          "first_line": 188,
+          "last_line": 203,
+          "finding": "CUDA conversion stays on CUDA and forwards to the backend to_dtype implementation."
+        }
+      ]
+    },
+    {
+      "id": "cudarc_safe_gemm",
+      "owner": "cudarc",
+      "version_or_revision": "0.19.10",
+      "path": "src/cublas/safe/gemm.rs",
+      "sha256": "ede0422de76c4f99199ebd011f7792f54f6404dbfb47a454eac54c0f453493cf",
+      "examined_regions": [
+        {
+          "symbol": "GemmConfig",
+          "first_line": 8,
+          "last_line": 19,
+          "finding": "Contains matrix dimensions, transpose flags, leading dimensions and scalar coefficients."
+        },
+        {
+          "symbol": "StridedBatchedConfig",
+          "first_line": 23,
+          "last_line": 29,
+          "finding": "Contains GemmConfig, batch_size and three batch strides."
+        },
+        {
+          "symbol": "Gemm",
+          "first_line": 32,
+          "last_line": 60,
+          "finding": "Declares separate plain and strided-batched methods; no automatic batch-size-one conversion is defined."
+        },
+        {
+          "symbol": "<CudaBlas as Gemm<half::f16>>::gemm",
+          "first_line": 64,
+          "last_line": 97,
+          "finding": "Requests COMPUTE_32F and CUBLAS_GEMM_DEFAULT through result::gemm_ex. Not the audited Candle route."
+        },
+        {
+          "symbol": "<CudaBlas as Gemm<half::f16>>::gemm_strided_batched",
+          "first_line": 98,
+          "last_line": 139,
+          "finding": "Requests COMPUTE_32F and CUBLAS_GEMM_DEFAULT without reading Candle flags."
+        },
+        {
+          "symbol": "<CudaBlas as Gemm<half::bf16>>::gemm",
+          "first_line": 144,
+          "last_line": 181,
+          "finding": "Uses BF16 A/B/C, F32 alpha/beta, COMPUTE_32F and CUBLAS_GEMM_DEFAULT through result::gemm_ex; bypassed by Candle's dense BF16 arm."
+        },
+        {
+          "symbol": "<CudaBlas as Gemm<half::bf16>>::gemm_strided_batched",
+          "first_line": 182,
+          "last_line": 223,
+          "finding": "Uses BF16 A/B/C and COMPUTE_32F without Candle getters; bypassed by Candle's local BF16 helper."
+        },
+        {
+          "symbol": "<CudaBlas as Gemm<f32>>::gemm",
+          "first_line": 227,
+          "last_line": 253,
+          "finding": "Calls result::sgemm, without an explicit compute-type argument. Not reached by the audited dense F32 arm."
+        },
+        {
+          "symbol": "<CudaBlas as Gemm<f32>>::gemm_strided_batched",
+          "first_line": 255,
+          "last_line": 285,
+          "finding": "Calls result::sgemm_strided_batched, without an explicit compute-type argument. Candle's F32 arm instead calls its local Ex helper."
+        }
+      ]
+    },
+    {
+      "id": "cudarc_safe",
+      "owner": "cudarc",
+      "version_or_revision": "0.19.10",
+      "path": "src/cublas/safe/mod.rs",
+      "sha256": "5842b11f0cef6e87a2de852d1c57756ca3e19c4082b71d5bd580bcbcede1d843",
+      "examined_regions": [
+        {
+          "symbol": "CudaBlas::new",
+          "first_line": 35,
+          "last_line": 42,
+          "finding": "Binds the context, creates a handle and sets its stream; does not explicitly set math, atomics or pointer mode."
+        },
+        {
+          "symbol": "CudaBlas::handle",
+          "first_line": 45,
+          "last_line": 47,
+          "finding": "Exposes the raw handle by reference."
+        },
+        {
+          "symbol": "CudaBlas::set_stream",
+          "first_line": 55,
+          "last_line": 58,
+          "finding": "Unsafe method changes the stored stream and the cuBLAS handle's stream."
+        },
+        {
+          "symbol": "CudaBlas::set_pointer_mode",
+          "first_line": 67,
+          "last_line": 75,
+          "finding": "Provides explicit pointer-mode mutation; the audited application does not call it."
+        },
+        {
+          "symbol": "CudaBlas::get_pointer_mode",
+          "first_line": 79,
+          "last_line": 85,
+          "finding": "Provides a pointer-mode query; its existence is not evidence of an application query."
+        }
+      ]
+    },
+    {
+      "id": "cudarc_result",
+      "owner": "cudarc",
+      "version_or_revision": "0.19.10",
+      "path": "src/cublas/result.rs",
+      "sha256": "01467682707577979cf669b8493cda19465fc34f8653e74265abf08062c1efa1",
+      "examined_regions": [
+        {
+          "symbol": "create_handle",
+          "first_line": 29,
+          "last_line": 35,
+          "finding": "Wraps cublasCreate_v2 without adding attribute pinning."
+        },
+        {
+          "symbol": "set_stream",
+          "first_line": 53,
+          "last_line": 58,
+          "finding": "Wraps cublasSetStream_v2."
+        },
+        {
+          "symbol": "gemm_ex",
+          "first_line": 373,
+          "last_line": 416,
+          "finding": "Forwards operand types, compute_type and algo to cublasGemmEx. This plain-GEMM alternative is not reached."
+        },
+        {
+          "symbol": "gemm_strided_batched_ex",
+          "first_line": 427,
+          "last_line": 478,
+          "finding": "Forwards operand types, batch_count, compute_type and algo unchanged to sys::cublasGemmStridedBatchedEx. No plain-GEMM switch or compute-type override."
+        },
+        {
+          "symbol": "sgemm",
+          "first_line": 174,
+          "last_line": 194,
+          "finding": "Forwards to cublasSgemm_v2; not the audited F32 route."
+        },
+        {
+          "symbol": "sgemm_strided_batched",
+          "first_line": 301,
+          "last_line": 326,
+          "finding": "Forwards to cublasSgemmStridedBatched; not the audited F32 route."
+        }
+      ]
+    },
+    {
+      "id": "cudarc_safe_grouped_gemm",
+      "owner": "cudarc",
+      "version_or_revision": "0.19.10",
+      "path": "src/cublas/safe/grouped_gemm.rs",
+      "sha256": "feef119470d453fe0409a9ed124539d168aa1f07edc8b5434f984a542e15eb5b",
+      "examined_regions": [
+        {
+          "symbol": "GroupedGemmDtype and its F16/BF16 implementations",
+          "first_line": 12,
+          "last_line": 43,
+          "finding": "Defines a separate grouped-GEMM dtype interface. F16 and BF16 implementations use F32 scalar storage and request CUBLAS_COMPUTE_32F."
+        },
+        {
+          "symbol": "GroupedGemmConfig",
+          "first_line": 45,
+          "last_line": 100,
+          "finding": "Separate grouped configuration contains per-group dimensions, transpose flags, scalar arrays, leading dimensions and problem counts; it is not GemmConfig or StridedBatchedConfig."
+        },
+        {
+          "symbol": "GroupedGemm",
+          "first_line": 102,
+          "last_line": 122,
+          "finding": "Declares grouped_gemm over arrays of device-slice references. The actual trait name in the supplied source is GroupedGemm, not Gmm; Gmm appears in safe/mod.rs documentation but is not the trait declared here."
+        },
+        {
+          "symbol": "<CudaBlas as GroupedGemm<T>>::grouped_gemm, older-CUDA branch",
+          "first_line": 124,
+          "last_line": 148,
+          "finding": "For the enumerated CUDA feature versions through 12.4, the separate grouped method panics with a CUDA 12.5+ requirement. It does not modify ordinary Gemm dispatch."
+        },
+        {
+          "symbol": "<CudaBlas as GroupedGemm<T>>::grouped_gemm, supported-CUDA branch",
+          "first_line": 150,
+          "last_line": 233,
+          "finding": "The alternate feature branch implements the separate grouped method and calls sys::cublasGemmGroupedBatchedEx at lines 205-228. No Gemm implementation or ordinary gemm_strided_batched_ex dispatch is replaced. Unreachability is established by the Candle caller edges, not merely by this method's existence."
+        }
+      ]
+    },
+    {
+      "id": "candle_nn_ops",
+      "owner": "candle-nn",
+      "version_or_revision": "0.9.2",
+      "path": "src/ops.rs",
+      "sha256": "9c60662c0e2c890777a09b2bbea34da8bef716bd247b8775da0a61fe4263068d",
+      "examined_regions": [
+        {
+          "symbol": "softmax",
+          "first_line": 22,
+          "last_line": 29,
+          "finding": "Generic composition of max, subtraction, exponentiation, sum and division. Not the function called by repo_precision::attention."
+        },
+        {
+          "symbol": "<SoftmaxLastDim as candle::CustomOp1>::cpu_fwd",
+          "first_line": 288,
+          "last_line": 326,
+          "finding": "Contains the nested CPU softmax function starting at line 289. This is not the executed CUDA implementation."
+        },
+        {
+          "symbol": "<SoftmaxLastDim as candle::CustomOp1>::cuda_fwd",
+          "first_line": 328,
+          "last_line": 383,
+          "finding": "Requires contiguous input, maps its storage dtype to T, allocates CudaSlice<T> output, and launches the dtype-specific softmax kernel from kernels::REDUCE. Returns CUDA storage and the unchanged shape. F32 input therefore produces F32 output; no cuBLAS call is made."
+        },
+        {
+          "symbol": "softmax_last_dim",
+          "first_line": 429,
+          "last_line": 431,
+          "finding": "Calls xs.apply_op1_no_bwd(&SoftmaxLastDim), rather than the generic softmax function. The CUDA custom-op route is the relevant backend for the audited executor."
+        }
+      ]
+    },
+    {
+      "id": "candle_nn_linear",
+      "owner": "candle-nn",
+      "version_or_revision": "0.9.2",
+      "path": "src/linear.rs",
+      "sha256": "c7827f685ef90affe4cefee1d133e9acdbd2489125e6f47f233f62e289a9c658",
+      "examined_regions": [
+        {
+          "symbol": "Linear::new",
+          "first_line": 29,
+          "last_line": 31,
+          "finding": "Stores the supplied weight and optional bias without inserting a conversion or selecting another backend."
+        },
+        {
+          "symbol": "<Linear as super::Module>::forward",
+          "first_line": 43,
+          "last_line": 78,
+          "finding": "Rank-2 input takes the default arm at lines 69-72: weight.t() followed by x.matmul(&w). Higher-rank flatten/broadcast arms are bypassed by linear3. All four audited linears have no bias."
+        }
+      ]
+    },
+    {
+      "id": "repo_precision",
+      "owner": "rustv1",
+      "version_or_revision": "FILLED_BY_INTEGRATOR",
+      "path": "rustv1/src/precision.rs",
+      "sha256": "96468d090c70db603209d470752ceb27af723d07961eb51cb9f3a519a48a15bf",
+      "examined_regions": [
+        {
+          "symbol": "PrecisionProfile::single_norm",
+          "first_line": 30,
+          "last_line": 32,
+          "finding": "Enabled for F."
+        },
+        {
+          "symbol": "PrecisionProfile::single_activation",
+          "first_line": 34,
+          "last_line": 36,
+          "finding": "Enabled for F."
+        },
+        {
+          "symbol": "PrecisionProfile::wide_qk",
+          "first_line": 38,
+          "last_line": 40,
+          "finding": "Enabled for F."
+        },
+        {
+          "symbol": "PrecisionProfile::wide_pv",
+          "first_line": 42,
+          "last_line": 44,
+          "finding": "Enabled for F."
+        },
+        {
+          "symbol": "rms",
+          "first_line": 47,
+          "last_line": 70,
+          "finding": "F computes normalization and norm-weight multiplication in F32, then casts back to x.dtype(). On the audited BF16 hidden-state route the output is BF16."
+        },
+        {
+          "symbol": "silu_mul",
+          "first_line": 72,
+          "last_line": 85,
+          "finding": "F computes activation and product in F32, then casts to gate.dtype(), which is BF16 on this route."
+        },
+        {
+          "symbol": "attention",
+          "first_line": 91,
+          "last_line": 119,
+          "finding": "F casts Q/K to F32, materializes transposed K, computes QK, scales and adds an F32 mask, calls softmax_last_dim, computes PV with V cast to F32, then casts context to q.dtype(). The PV GEMM itself outputs F32; the subsequent context cast outputs BF16 on this route."
+        }
+      ]
+    },
+    {
+      "id": "repo_cuda_math",
+      "owner": "rustv1",
+      "version_or_revision": "FILLED_BY_INTEGRATOR",
+      "path": "rustv1/src/cuda_math.rs",
+      "sha256": "0d68c5cc85c09deaee881cb68ae43ba73fe816c728d3b52bdf083f7aeeb25afa",
+      "examined_regions": [
+        {
+          "symbol": "PIN_ACTIVE",
+          "first_line": 19,
+          "last_line": 21,
+          "finding": "Excludes duplicate policy owners through this module only; cannot interpose on external calls to Candle's public setters."
+        },
+        {
+          "symbol": "Settings::read",
+          "first_line": 31,
+          "last_line": 37,
+          "finding": "Reads the three Candle getters separately; not a transactional snapshot."
+        },
+        {
+          "symbol": "Settings::all_disabled",
+          "first_line": 39,
+          "last_line": 41,
+          "finding": "Requires all three settings to be false."
+        },
+        {
+          "symbol": "MathModePin",
+          "first_line": 62,
+          "last_line": 68,
+          "finding": "Retains audit identity, original settings, owner thread and sticky drift state. PhantomData<Rc<()>> makes the guard !Send and !Sync."
+        },
+        {
+          "symbol": "MathModePin::pin",
+          "first_line": 71,
+          "last_line": 103,
+          "finding": "Requires a nonempty identity, acquires the module-global owner slot, records original settings, separately sets all three flags false and checks them. It does not validate the identity's hash or artifact contents."
+        },
+        {
+          "symbol": "MathModePin::check",
+          "first_line": 105,
+          "last_line": 154,
+          "finding": "Checks owner thread and sticky drift, samples getters and fails if any is true. Reports source-audit policy and environment values, not queried raw-handle attributes or verified internal algorithms. Flip-and-restore between samples can escape detection."
+        },
+        {
+          "symbol": "<MathModePin as Drop>::drop",
+          "first_line": 158,
+          "last_line": 162,
+          "finding": "Releases PIN_ACTIVE without restoring original flags. A process restart after detected drift remains an operational requirement."
+        }
+      ]
+    },
+    {
+      "id": "repo_m2_route",
+      "owner": "rustv1",
+      "version_or_revision": "FILLED_BY_INTEGRATOR",
+      "path": "rustv1/src/m2_route.rs",
+      "sha256": "016d7d07ed5ae09d5ae48fb5a6661222e956a83f9ed13face521f7e3726a654c",
+      "examined_regions": [
+        {
+          "symbol": "open",
+          "first_line": 14,
+          "last_line": 36,
+          "finding": "Pins the math policy before Device::new_cuda and IndependentExecutor::load. Passes the guard into the executor. The caller must supply the identity already validated by the acceptance driver."
+        }
+      ]
+    },
+    {
+      "id": "repo_model",
+      "owner": "rustv1",
+      "version_or_revision": "FILLED_BY_INTEGRATOR",
+      "path": "rustv1/src/model.rs",
+      "sha256": "8554aded06d57495e48a35badf1985553f93ab96791f24c6c930befcb9867edf",
+      "examined_regions": [
+        {
+          "symbol": "expected_manifest",
+          "first_line": 281,
+          "last_line": 302,
+          "finding": "Specifies BF16 embedding, norms and all projection weights with positive frozen dimensions, including Q=3072, K/V=1024, hidden=2048 and intermediate=6144."
+        },
+        {
+          "symbol": "validate_manifest",
+          "first_line": 306,
+          "last_line": 345,
+          "finding": "Checks safetensors header inventory, shapes and BF16 dtypes before mapping."
+        },
+        {
+          "symbol": "linear3",
+          "first_line": 348,
+          "last_line": 353,
+          "finding": "Reshapes [B,S,K] to [B*S,K], calls Linear::forward and reshapes the result back. All audited projection matmuls are rank 2 with cuBLAS batch count 1."
+        },
+        {
+          "symbol": "no_bias",
+          "first_line": 355,
+          "last_line": 362,
+          "finding": "Loads an [out,input] weight from the supplied VarBuilder and constructs Linear with no bias."
+        },
+        {
+          "symbol": "Model::load",
+          "first_line": 436,
+          "last_line": 551,
+          "finding": "Validates frozen positive topology and max_len<=1024, validates BF16 checkpoint headers, creates the VarBuilder with the caller's dtype/device, loads weights and concatenates Q/K/V and gate/up along output dimension. IndependentExecutor supplies BF16 and CUDA. Merged weights are [5120,2048] and [12288,2048]; O is [2048,3072], down is [2048,6144]."
+        },
+        {
+          "symbol": "Model::with_precision",
+          "first_line": 553,
+          "last_line": 558,
+          "finding": "Sets the model precision profile; IndependentExecutor selects F immediately after loading."
+        },
+        {
+          "symbol": "Model::rope",
+          "first_line": 688,
+          "last_line": 701,
+          "finding": "Performs rotary arithmetic in F32 and casts the concatenated result back to self.dtype, BF16 here."
+        },
+        {
+          "symbol": "Model::repeat_kv",
+          "first_line": 703,
+          "last_line": 710,
+          "finding": "Broadcasts and materializes repeated KV heads, then reshapes to matching query head count. Does not change dtype."
+        },
+        {
+          "symbol": "Model::run_decoder",
+          "first_line": 714,
+          "last_line": 718,
+          "finding": "Uses maximum valid sequence length as S. IndependentExecutor passes one sequence, so physical S equals its valid token count."
+        },
+        {
+          "symbol": "Model::run_decoder_padded",
+          "first_line": 735,
+          "last_line": 920,
+          "finding": "Embedding produces BF16 hidden states. F RMS returns BF16; merged QKV is invoked at 805. Q/K rotary and Q scaling cast back to BF16; repeated K/V feed attention at 862-864. Context is rearranged for O at 871. BF16 residual and RMS feed gate/up at 885; F activation returns BF16 for down at 893. Residuals remain BF16. Final states are explicitly widened to F32 at 917."
+        },
+        {
+          "symbol": "Model::forward",
+          "first_line": 922,
+          "last_line": 929,
+          "finding": "Pools and L2-normalizes using tensor elementwise/reduction operations, then retrieves F32 output to host; introduces no additional GEMM."
+        },
+        {
+          "symbol": "Model::pooled_mean",
+          "first_line": 934,
+          "last_line": 945,
+          "finding": "Runs the decoder and averages valid token states by sum and affine operations; no additional GEMM."
+        },
+        {
+          "symbol": "IndependentExecutor",
+          "first_line": 1000,
+          "last_line": 1008,
+          "finding": "Privately owns Model and MathModePin, retains poison state and is !Send/!Sync."
+        },
+        {
+          "symbol": "IndependentExecutor::load",
+          "first_line": 1020,
+          "last_line": 1071,
+          "finding": "Requires CUDA, checks math policy, loads BF16 Model and selects F, then durably records the startup manifest including a further math check."
+        },
+        {
+          "symbol": "IndependentExecutor::record",
+          "first_line": 1077,
+          "last_line": 1085,
+          "finding": "Writes a JSON record and newline, flushes and syncs data; errors propagate."
+        },
+        {
+          "symbol": "IndependentExecutor::forward_serving",
+          "first_line": 1087,
+          "last_line": 1123,
+          "finding": "Rejects poisoned executors and validates the whole logical request before execution. Sets poisoned=true before operational work and clears it only after complete success; operational errors and unwinding panics leave it poisoned."
+        },
+        {
+          "symbol": "IndependentExecutor::forward_validated",
+          "first_line": 1125,
+          "last_line": 1223,
+          "finding": "Executes one physical sequence at a time, checks flags before each forward and after host output retrieval, validates output, and records begin/end manifests. Returned errors do not yield a successful partial response. No-overlap with external device/stream users is still an operational restriction."
+        }
+      ]
+    }
+  ],
+  "branch_catalog": {
+    "tensor_matmul": [
+      "Reject rank < 2 or unequal operand ranks.",
+      "Return zeros without GEMM if output element count is zero or k is zero.",
+      "Otherwise require k == k2 and equal products of batch dimensions.",
+      "Call Storage::matmul with computed (batching,m,n,k) and both layouts."
+    ],
+    "storage_matmul": [
+      "Require matching device location and matching dtype.",
+      "CUDA/CUDA directly dispatches to <CudaStorage as BackendStorage>::matmul.",
+      "No implicit promotion or backend fallback.",
+      "CUDA device-location equality is not proof of exclusive stream ownership."
+    ],
+    "linear_forward": [
+      "linear3 always supplies rank-2 input.",
+      "Linear::forward takes its default arm, transposes the stored [N,K] weight and calls Tensor::matmul.",
+      "The rank-3 and rank-4 broadcast branches are not reached.",
+      "All four projection biases are None."
+    ],
+    "broadcast_matmul": [
+      "Both shapes expand: materialize both operands, then matmul.",
+      "Only RHS expands: materialize RHS, then matmul.",
+      "Only LHS expands: materialize LHS, then matmul.",
+      "Neither expands: direct matmul."
+    ],
+    "rhs_inner_layout_in_order": [
+      {
+        "condition": "(rhs_m1 == 1 || n == 1) && (rhs_m2 == n || k == 1)",
+        "result": "transa=N, lda=n"
+      },
+      {
+        "condition": "First condition false AND (rhs_m1 == k || n == 1) && (rhs_m2 == 1 || k == 1)",
+        "result": "transa=T, lda=k"
+      },
+      {
+        "condition": "Neither condition",
+        "result": "MatMulNonContiguous"
+      }
+    ],
+    "lhs_inner_layout_in_order": [
+      {
+        "condition": "(lhs_m1 == 1 || k == 1) && (lhs_m2 == k || m == 1)",
+        "result": "transb=N, ldb=k"
+      },
+      {
+        "condition": "First condition false AND (lhs_m1 == m || k == 1) && (lhs_m2 == 1 || m == 1)",
+        "result": "transb=T, ldb=m"
+      },
+      {
+        "condition": "Neither condition",
+        "result": "MatMulNonContiguous"
+      }
+    ],
+    "batch_stride_match_for_each_operand_in_order": [
+      "[s1,stride] if s1 == stride * operand.dims()[1]: use stride.",
+      "[_,stride] if operand.dims()[0] == 1: use stride.",
+      "[stride,_] if operand.dims()[1] == 1: use stride.",
+      "[stride]: use stride.",
+      "[]: use m*k for LHS or n*k for RHS.",
+      "Anything else: MatMulNonContiguous."
+    ],
+    "storage_dtype": [
+      "BF16/BF16: Candle-local BF16 strided-batched Ex helper.",
+      "F16/F16: Candle-local F16 strided-batched Ex helper.",
+      "F32/F32: Candle-local F32 strided-batched Ex helper.",
+      "F64/F64: cudarc safe Gemm<f64>::gemm_strided_batched.",
+      "Other pairs: error."
+    ],
+    "compute_type": [
+      "F32 getter false: CUBLAS_COMPUTE_32F.",
+      "F32 getter true: CUBLAS_COMPUTE_32F_FAST_TF32.",
+      "BF16 getter false: CUBLAS_COMPUTE_32F.",
+      "BF16 getter true: CUBLAS_COMPUTE_32F_FAST_16BF.",
+      "F16 getter false: CUBLAS_COMPUTE_32F with F32 alpha/beta.",
+      "F16 getter true: CUBLAS_COMPUTE_16F with F16 alpha/beta."
+    ],
+    "executed_projection_layout": "For all four projections, LHS=[S,K] is contiguous and RHS is the transposed view of contiguous [N,K] weight, with strides [1,K]. Positive K,N are greater than one. gemm_config selects transa=T, lda=K, transb=N, ldb=K, ldc=N; batch prefixes are empty and batch_count=1. This corrects the draft's unresolved N/N possibility.",
+    "executed_qk_layout": "Q=[1,24,S,128] is widened from BF16 to contiguous F32. K is widened, transposed and made contiguous as [1,24,128,S]. gemm_config selects N/N with (b,m,n,k)=(24,S,S,128). Singleton S=1 remains accepted by the first predicates.",
+    "executed_pv_layout": "F32 softmax output P=[1,24,S,S] and widened contiguous F32 V=[1,24,S,128] select N/N with (b,m,n,k)=(24,S,128,S), including S=1.",
+    "shape_dependent_backend_switch": "No b==1, m==1 or sequence-length threshold switch exists in the examined BF16/F32 dense matmul chain."
+  },
+  "dispatch_paths": [
+    {
+      "id": "bf16_merged_qkv",
+      "profile_operations": [
+        "Merged QKV projection in each of 16 decoder layers"
+      ],
+      "operand_dtype": "BF16",
+      "output_dtype": "BF16",
+      "steps": [
+        {
+          "source_file_id": "repo_model",
+          "symbol": "IndependentExecutor::load",
+          "finding": "Selects CUDA BF16 model storage and profile F."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::load",
+          "finding": "Loads BF16 Q/K/V weights and concatenates them into [5120,2048] qkv weight."
+        },
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "rms",
+          "finding": "Profile F returns normalized hidden states in the incoming BF16 dtype."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::run_decoder_padded",
+          "finding": "Line 805 passes normalized BF16 states to linear3(&layer.qkv,...)."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "linear3",
+          "finding": "Flattens to [S,2048] for physical B=1."
+        },
+        {
+          "source_file_id": "candle_nn_linear",
+          "symbol": "<Linear as super::Module>::forward",
+          "finding": "Rank-2 arm calls matmul with the transposed [5120,2048] BF16 weight."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::matmul",
+          "finding": "Passes (b,m,n,k)=(1,S,5120,2048) to storage."
+        },
+        {
+          "source_file_id": "candle_storage",
+          "symbol": "Storage::matmul",
+          "finding": "Matching CUDA/BF16 operands dispatch directly to CUDA backend matmul."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "<CudaStorage as BackendStorage>::matmul",
+          "finding": "BF16 arm allocates BF16 output and calls the local BF16 helper."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_config",
+          "finding": "Selects T/N, batch_count=1, cuBLAS dimensions (5120,S,2048)."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_strided_batched_bf16",
+          "finding": "False getter requests COMPUTE_32F with CUDA_R_16BF A/B/C and F32 alpha/beta."
+        },
+        {
+          "source_file_id": "cudarc_result",
+          "symbol": "gemm_strided_batched_ex",
+          "finding": "Forwards the request unchanged to cublasGemmStridedBatchedEx."
+        }
+      ],
+      "controlling_getter": "candle_core::cuda_backend::gemm_reduced_precision_bf16",
+      "pinned_value": false,
+      "requested_compute_type": "CUBLAS_COMPUTE_32F",
+      "requested_algorithm": "CUBLAS_GEMM_DEFAULT_TENSOR_OP",
+      "terminal_api": "cublasGemmStridedBatchedEx",
+      "coverage_basis": "Static source tracing of the BF16 loader, hidden-state dtype induction, merged-weight construction, actual projection call site and complete dense dispatch chain for 1<=S<=1024. No runtime dispatch trace is claimed."
+    },
+    {
+      "id": "bf16_o",
+      "profile_operations": [
+        "Attention output projection in each of 16 decoder layers"
+      ],
+      "operand_dtype": "BF16",
+      "output_dtype": "BF16",
+      "steps": [
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::load",
+          "finding": "Loads BF16 O weight [2048,3072] through no_bias."
+        },
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "attention",
+          "finding": "After the F32 PV GEMM, casts context to q.dtype(), BF16 on the audited route."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::run_decoder_padded",
+          "finding": "Lines 865-867 transpose/materialize/reshape context to [1,S,3072]; line 871 calls the O projection."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "linear3",
+          "finding": "Reshapes BF16 input to [S,3072]."
+        },
+        {
+          "source_file_id": "candle_nn_linear",
+          "symbol": "<Linear as super::Module>::forward",
+          "finding": "Rank-2 arm uses the transposed BF16 weight and Tensor::matmul."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::matmul",
+          "finding": "Passes (1,S,2048,3072) to Storage::matmul."
+        },
+        {
+          "source_file_id": "candle_storage",
+          "symbol": "Storage::matmul",
+          "finding": "Matching CUDA/BF16 operands dispatch to CUDA backend matmul."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "<CudaStorage as BackendStorage>::matmul",
+          "finding": "Selects BF16 arm and BF16 output storage."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_config",
+          "finding": "Selects T/N, batch_count=1, cuBLAS dimensions (2048,S,3072)."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_strided_batched_bf16",
+          "finding": "False getter selects COMPUTE_32F and CUDA_R_16BF A/B/C."
+        },
+        {
+          "source_file_id": "cudarc_result",
+          "symbol": "gemm_strided_batched_ex",
+          "finding": "Forwards unchanged to cublasGemmStridedBatchedEx."
+        }
+      ],
+      "controlling_getter": "candle_core::cuda_backend::gemm_reduced_precision_bf16",
+      "pinned_value": false,
+      "requested_compute_type": "CUBLAS_COMPUTE_32F",
+      "requested_algorithm": "CUBLAS_GEMM_DEFAULT_TENSOR_OP",
+      "terminal_api": "cublasGemmStridedBatchedEx",
+      "coverage_basis": "Static source tracing establishes BF16 Q, the explicit post-PV BF16 cast, context layout construction, BF16 O weight and complete dispatch. The F32 PV GEMM output is distinguished from its subsequent BF16 context conversion."
+    },
+    {
+      "id": "bf16_merged_gate_up",
+      "profile_operations": [
+        "Merged gate/up projection in each of 16 decoder layers"
+      ],
+      "operand_dtype": "BF16",
+      "output_dtype": "BF16",
+      "steps": [
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::load",
+          "finding": "Concatenates BF16 gate/up weights into [12288,2048]."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::run_decoder_padded",
+          "finding": "BF16 residual add at 876 feeds F RMS at 879-881; line 885 invokes merged gate/up."
+        },
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "rms",
+          "finding": "Returns BF16 after F32 normalization and weight multiplication."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "linear3",
+          "finding": "Supplies contiguous rank-2 BF16 input [S,2048]."
+        },
+        {
+          "source_file_id": "candle_nn_linear",
+          "symbol": "<Linear as super::Module>::forward",
+          "finding": "Uses transposed merged weight in the rank-2 matmul arm."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::matmul",
+          "finding": "Passes (1,S,12288,2048) to storage."
+        },
+        {
+          "source_file_id": "candle_storage",
+          "symbol": "Storage::matmul",
+          "finding": "CUDA/BF16 pair dispatches directly to CUDA backend."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "<CudaStorage as BackendStorage>::matmul",
+          "finding": "Selects BF16 helper and BF16 output allocation."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_config",
+          "finding": "Selects T/N, batch_count=1, cuBLAS dimensions (12288,S,2048)."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_strided_batched_bf16",
+          "finding": "False getter selects COMPUTE_32F with BF16 A/B/C."
+        },
+        {
+          "source_file_id": "cudarc_result",
+          "symbol": "gemm_strided_batched_ex",
+          "finding": "Forwards unchanged to cublasGemmStridedBatchedEx."
+        }
+      ],
+      "controlling_getter": "candle_core::cuda_backend::gemm_reduced_precision_bf16",
+      "pinned_value": false,
+      "requested_compute_type": "CUBLAS_COMPUTE_32F",
+      "requested_algorithm": "CUBLAS_GEMM_DEFAULT_TENSOR_OP",
+      "terminal_api": "cublasGemmStridedBatchedEx",
+      "coverage_basis": "Static source tracing establishes BF16 residual/RMS output, merged BF16 weight and rank-2 T/N dispatch for every supported physical sequence length."
+    },
+    {
+      "id": "bf16_down",
+      "profile_operations": [
+        "MLP down projection in each of 16 decoder layers"
+      ],
+      "operand_dtype": "BF16",
+      "output_dtype": "BF16",
+      "steps": [
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::load",
+          "finding": "Loads BF16 down weight [2048,6144] through no_bias."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::run_decoder_padded",
+          "finding": "Splits BF16 merged gate/up result, calls silu_mul at 891 and down projection at 893."
+        },
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "silu_mul",
+          "finding": "Computes F32 activation/product, then casts to BF16 gate.dtype()."
+        },
+        {
+          "source_file_id": "repo_model",
+          "symbol": "linear3",
+          "finding": "Supplies contiguous rank-2 BF16 input [S,6144]."
+        },
+        {
+          "source_file_id": "candle_nn_linear",
+          "symbol": "<Linear as super::Module>::forward",
+          "finding": "Uses transposed BF16 down weight in Tensor::matmul."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::matmul",
+          "finding": "Passes (1,S,2048,6144) to storage."
+        },
+        {
+          "source_file_id": "candle_storage",
+          "symbol": "Storage::matmul",
+          "finding": "Matching CUDA/BF16 operands dispatch directly to CUDA backend."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "<CudaStorage as BackendStorage>::matmul",
+          "finding": "Selects BF16 helper and BF16 output."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_config",
+          "finding": "Selects T/N, batch_count=1, cuBLAS dimensions (2048,S,6144)."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_strided_batched_bf16",
+          "finding": "False getter selects COMPUTE_32F and BF16 A/B/C."
+        },
+        {
+          "source_file_id": "cudarc_result",
+          "symbol": "gemm_strided_batched_ex",
+          "finding": "Forwards unchanged to cublasGemmStridedBatchedEx."
+        }
+      ],
+      "controlling_getter": "candle_core::cuda_backend::gemm_reduced_precision_bf16",
+      "pinned_value": false,
+      "requested_compute_type": "CUBLAS_COMPUTE_32F",
+      "requested_algorithm": "CUBLAS_GEMM_DEFAULT_TENSOR_OP",
+      "terminal_api": "cublasGemmStridedBatchedEx",
+      "coverage_basis": "Static source tracing establishes the post-activation BF16 cast, down-weight dtype and complete rank-2 projection dispatch. Down output and the following residual preserve BF16 for the next layer."
+    },
+    {
+      "id": "widened_f32_qk",
+      "profile_operations": [
+        "Q multiplied by transposed K in each of 16 decoder layers"
+      ],
+      "operand_dtype": "F32",
+      "output_dtype": "F32",
+      "steps": [
+        {
+          "source_file_id": "repo_model",
+          "symbol": "Model::run_decoder_padded",
+          "finding": "Produces BF16 Q/K, applies rotary/scaling with BF16 cast-back, repeats KV heads and invokes precision::attention."
+        },
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "attention",
+          "finding": "Profile F explicitly casts Q and K to F32 and makes transposed K contiguous before QK matmul."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::to_dtype",
+          "finding": "BF16-to-F32 conversions create contiguous F32 tensors."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::contiguous",
+          "finding": "Materializes transposed K where needed, giving [1,24,128,S]."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::matmul",
+          "finding": "Q=[1,24,S,128] and K-transpose=[1,24,128,S] yield (24,S,S,128)."
+        },
+        {
+          "source_file_id": "candle_storage",
+          "symbol": "Storage::matmul",
+          "finding": "Matching CUDA/F32 operands dispatch directly to CUDA backend."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "<CudaStorage as BackendStorage>::matmul",
+          "finding": "Selects the F32 arm and F32 output allocation."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_config",
+          "finding": "Selects N/N and head-batched strides; batch_count=24, including S=1."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_strided_batched_f32",
+          "finding": "False getter requests COMPUTE_32F, not FAST_TF32; A/B/C are CUDA_R_32F."
+        },
+        {
+          "source_file_id": "cudarc_result",
+          "symbol": "gemm_strided_batched_ex",
+          "finding": "Forwards unchanged to cublasGemmStridedBatchedEx."
+        }
+      ],
+      "controlling_getter": "candle_core::cuda_backend::gemm_reduced_precision_f32",
+      "pinned_value": false,
+      "requested_compute_type": "CUBLAS_COMPUTE_32F",
+      "requested_algorithm": "CUBLAS_GEMM_DEFAULT_TENSOR_OP",
+      "terminal_api": "cublasGemmStridedBatchedEx",
+      "coverage_basis": "Static source tracing of the F branch and actual BF16 caller establishes F32 operands, layout predicates and storage dispatch for all supported S. Physical sequence B=1 does not reduce the attention cuBLAS batch count below 24."
+    },
+    {
+      "id": "widened_f32_pv",
+      "profile_operations": [
+        "Attention probabilities multiplied by V in each of 16 decoder layers"
+      ],
+      "operand_dtype": "F32",
+      "output_dtype": "F32",
+      "steps": [
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "attention",
+          "finding": "Scales F32 scores, adds an F32 mask, and calls softmax_last_dim at line 112."
+        },
+        {
+          "source_file_id": "candle_nn_ops",
+          "symbol": "softmax_last_dim",
+          "finding": "Selects SoftmaxLastDim through apply_op1_no_bwd."
+        },
+        {
+          "source_file_id": "candle_storage",
+          "symbol": "Storage::apply_op1",
+          "finding": "CUDA input dispatches the custom operation to cuda_fwd."
+        },
+        {
+          "source_file_id": "candle_nn_ops",
+          "symbol": "<SoftmaxLastDim as candle::CustomOp1>::cuda_fwd",
+          "finding": "Runs dtype-specific CUDA softmax with F32 input/output storage and unchanged [1,24,S,S] shape."
+        },
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "attention",
+          "finding": "Profile F uses P directly and casts BF16 V to F32 before matmul."
+        },
+        {
+          "source_file_id": "candle_tensor",
+          "symbol": "Tensor::matmul",
+          "finding": "P=[1,24,S,S] and V=[1,24,S,128] yield (24,S,128,S)."
+        },
+        {
+          "source_file_id": "candle_storage",
+          "symbol": "Storage::matmul",
+          "finding": "Matching CUDA/F32 operands dispatch directly to CUDA backend."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "<CudaStorage as BackendStorage>::matmul",
+          "finding": "Selects F32 helper and F32 GEMM output."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_config",
+          "finding": "Selects N/N and head-batched strides; batch_count=24, including S=1."
+        },
+        {
+          "source_file_id": "candle_cuda",
+          "symbol": "gemm_strided_batched_f32",
+          "finding": "False getter selects COMPUTE_32F with CUDA_R_32F A/B/C."
+        },
+        {
+          "source_file_id": "cudarc_result",
+          "symbol": "gemm_strided_batched_ex",
+          "finding": "Forwards unchanged to cublasGemmStridedBatchedEx."
+        },
+        {
+          "source_file_id": "repo_precision",
+          "symbol": "attention",
+          "finding": "Only after the F32 GEMM, casts the returned context to BF16 q.dtype()."
+        }
+      ],
+      "controlling_getter": "candle_core::cuda_backend::gemm_reduced_precision_f32",
+      "pinned_value": false,
+      "requested_compute_type": "CUBLAS_COMPUTE_32F",
+      "requested_algorithm": "CUBLAS_GEMM_DEFAULT_TENSOR_OP",
+      "terminal_api": "cublasGemmStridedBatchedEx",
+      "coverage_basis": "Static source tracing includes the CUDA custom softmax output contract, explicit V widening, complete storage dispatch and post-GEMM cast. Softmax kernel arithmetic and proprietary cuBLAS algorithms are not certified."
+    }
+  ],
+  "alternate_paths": [
+    {
+      "path": "cuBLASLt",
+      "status": "unreachable_for_this_route",
+      "evidence": "repo_model::Model::run_decoder_padded uses four linear3 projections and repo_precision::attention uses explicit Tensor::matmul calls. candle_nn_linear::<Linear as super::Module>::forward, candle_tensor::Tensor::matmul and candle_storage::Storage::matmul lead to candle_cuda's local BF16/F32 helpers and cudarc_result::gemm_strided_batched_ex. None selects cublasLtMatmul or a custom Lt operation. This excludes an application-level Lt alternative, not undocumented internal implementation choices of classic cuBLAS."
+    },
+    {
+      "path": "Candle quantized GEMM",
+      "status": "unreachable_for_this_route",
+      "evidence": "repo_model::expected_manifest and validate_manifest require BF16 weights; IndependentExecutor::load selects BF16 Model storage; Model::load constructs ordinary candle-nn Linear objects. candle_storage::Storage::matmul and candle_cuda::<CudaStorage as BackendStorage>::matmul contain no quantized fallback for these operands."
+    },
+    {
+      "path": "cuDNN matmul or fused attention",
+      "status": "unreachable_for_this_route",
+      "evidence": "repo_model::Model::run_decoder_padded calls repo_precision::attention, which explicitly executes QK, softmax_last_dim and PV. The dense storage and CUDA matmul chain has no cuDNN or fused-attention branch."
+    },
+    {
+      "path": "cudarc safe plain or strided-batched Gemm<half::bf16>/Gemm<f32>",
+      "status": "unreachable_for_this_route",
+      "evidence": "candle_cuda::<CudaStorage as BackendStorage>::matmul calls local BF16/F32 helpers, which bypass cudarc_safe_gemm and call cudarc_result directly. Neither batch_count=1 nor S=1 changes that edge. The alternative safe BF16 methods request COMPUTE_32F; safe F32 methods use sgemm APIs without an explicit compute-type argument."
+    },
+    {
+      "path": "grouped_gemm / Gmm (summary label); actual source trait: GroupedGemm",
+      "status": "unreachable_for_this_route",
+      "evidence": "Integrator reports zero matches for grep -c \"gmm\\|grouped\" candle-core-0.9.2/src/cuda_backend/mod.rs. The positive dispatch evidence is the ordinary Gemm::gemm_strided_batched edge at mod.rs:2233 for the F64 arm, and Candle-local strided-batched Ex wrappers, including the supplied mod.rs:2520-2660 span and the complete F32/BF16 regions recorded in candle_cuda. Profile F reaches the local BF16/F32 wrappers, not the F64 Gemm arm. These wrappers call cudarc_result::gemm_strided_batched_ex, not GroupedGemm::grouped_gemm. The supplied cudarc-0.19.10/src/cublas/safe/grouped_gemm.rs declares GroupedGemm at 102-122 and its separate implementation at 124-233; the supported branch calls sys::cublasGemmGroupedBatchedEx. The Gmm wording in safe/mod.rs documentation is not a trait declaration. The reported grep result is corroborative, not a substitute for the positive caller-edge review."
+    },
+    {
+      "path": "F16 or F64 dense GEMM",
+      "status": "unreachable_for_this_route",
+      "evidence": "repo_model::IndependentExecutor::load fixes BF16 storage and profile F. repo_precision::rms, silu_mul and attention use BF16/F32 conversions. All six GEMM operand pairs are BF16/BF16 or F32/F32, so candle_cuda's F16/F64 arms cannot be selected."
+    },
+    {
+      "path": "Empty-output or zero-K matmul short circuit",
+      "status": "unreachable_for_this_route",
+      "evidence": "candle_tensor::Tensor::matmul returns zeros for empty output or k=0. repo_model::IndependentExecutor::forward_serving rejects empty sequences; Model::load validates positive frozen model dimensions; physical B=1 and S>=1 keep all six GEMMs nonempty."
+    },
+    {
+      "path": "Custom GEMM, custom PTX replacement or ug-compiled GEMM",
+      "status": "unreachable_for_this_route",
+      "evidence": "candle_device::CudaDevice::compile and get_or_load_custom_func exist, but the examined projection and attention GEMM call sites use the ordinary dense matmul chain. This is not an exclusion of all custom operations: SoftmaxLastDim is a reached CUDA custom op audited separately below."
+    },
+    {
+      "path": "candle_nn::ops::softmax_last_dim -> SoftmaxLastDim CUDA custom op",
+      "status": "separately_audited",
+      "evidence": "repo_precision::attention line 112 calls candle_nn_ops::softmax_last_dim at 429-431. candle_storage::Storage::apply_op1 routes CUDA storage to cuda_fwd; candle_nn_ops::<SoftmaxLastDim as candle::CustomOp1>::cuda_fwd at 328-383 requires contiguous input, allocates same-T output and loads softmax_f32 from kernels::REDUCE for F32 scores. candle_device::CudaDevice::get_or_load_func and CudaFunc::builder load and launch that kernel on the device stream. This is reached non-GEMM work; the review establishes output dtype/shape and the CUDA launch route, not kernel arithmetic or a cuBLAS precision setting."
+    },
+    {
+      "path": "Generic candle_nn::ops::softmax composition or CPU softmax implementation",
+      "status": "unreachable_for_this_route",
+      "evidence": "repo_precision::attention calls softmax_last_dim, not candle_nn_ops::softmax. IndependentExecutor requires CUDA. The nested softmax function beginning at ops.rs line 289 belongs to SoftmaxLastDim::cpu_fwd and is not the CUDA backend."
+    },
+    {
+      "path": "Linear rank-3/rank-4 broadcast-weight branches",
+      "status": "unreachable_for_this_route",
+      "evidence": "repo_model::linear3 reshapes every projection input to rank 2 before invoking candle_nn_linear::<Linear as super::Module>::forward; only its default weight.t()/matmul arm is reached."
+    }
+  ],
+  "controls": {
+    "f32_reduced_precision": false,
+    "f16_reduced_precision": false,
+    "bf16_reduced_precision": false,
+    "f16_used_by_profile_F": false,
+    "required_process_global_flags": {
+      "gemm_reduced_precision_f32": false,
+      "gemm_reduced_precision_f16": false,
+      "gemm_reduced_precision_bf16": false
+    },
+    "flag_storage_ordering": "Relaxed",
+    "compute_type_construction_owner_on_reached_paths": "candle-core, not cudarc safe/gemm.rs",
+    "application_control_source_examined": true,
+    "application_control": "m2_route::open acquires MathModePin before CUDA device/model initialization. IndependentExecutor retains it, selects BF16/F, serializes physical single-sequence forwards, checks flags around execution and poisons on operational failure.",
+    "module_duplicate_owner_exclusion": true,
+    "external_device_stream_exclusivity_enforced_by_type_system": false,
+    "boundary_checks_prevent_transient_concurrent_flag_changes": false,
+    "raw_handle_attributes_queried": false,
+    "cublas_atomics_mode_pinned": false,
+    "internal_cublas_algorithm_verified": false,
+    "host_alpha_beta_pointers_used": true,
+    "pointer_mode_runtime_verified": false,
+    "requested_algorithm": "CUBLAS_GEMM_DEFAULT_TENSOR_OP",
+    "algorithm_request_is_fixed_internal_algorithm": false,
+    "environment_values_recorded_not_pinned": [
+      "NVIDIA_TF32_OVERRIDE",
+      "CUBLAS_WORKSPACE_CONFIG"
+    ]
+  },
+  "conclusions": {
+    "f32_profile_F_gemms_request_compute_32f": true,
+    "bf16_profile_F_gemms_request_compute_32f": true,
+    "all_reachable_profile_F_gemm_paths_covered": true,
+    "raw_handle_attributes_queried": false,
+    "cublas_atomics_mode_pinned": false,
+    "internal_cublas_algorithm_verified": false,
+    "all_reached_branch_conditions_reviewed_against_supplied_call_sites": true,
+    "all_six_operation_operand_dtypes_established": true,
+    "projection_layout": "Rank-2 contiguous LHS with transposed weight RHS; cuBLAS T/N, batch_count=1.",
+    "attention_layout": "Contiguous F32 matrix operands; cuBLAS N/N, batch_count=24.",
+    "softmax_output_dtype": "F32",
+    "pv_gemm_output_dtype": "F32",
+    "post_pv_context_dtype": "BF16",
+    "plain_gemm_special_case_for_b1_found": false,
+    "cudarc_safe_gemm_is_reached_for_candle_bf16_f32": false,
+    "source_audit_proves_runtime_bit_identity": false,
+    "source_audit_proves_cross_device_bit_identity": false,
+    "runtime_acceptance_completed_by_this_audit": false,
+    "ready_for_acceptance_gate": false,
+    "qualification": "Positive source conclusions apply to the designated IndependentExecutor profile F route, exact reviewed sources and resolved dependency edge, with corresponding Candle getters remaining false throughout dispatch. They do not assert completed provenance verification, runtime execution or internal cuBLAS algorithm behavior."
+  },
+  "operational_restrictions": [
+    "Complete the pending integrator verification and replace every FILLED_BY_INTEGRATOR field before hashing, signing or treating this artifact as a passing audit.",
+    "Pin before device/model initialization and GPU work; use m2_route::open for the audited entry path.",
+    "Retain one executor owner with no overlapping device/stream work, including initialization and work submitted outside this module.",
+    "No other callers may mutate Candle GEMM precision controls. The three stores and reads are separate operations, not a transactional policy update.",
+    "Checks are snapshots and cannot detect every transient unauthorized change, including flip-and-restore between checks.",
+    "Retain MathModePin for the complete execution lifetime. After detected drift, poisoning or operational failure, restart the process rather than reacquiring a guard to continue.",
+    "Require profile F, BF16 model storage, physical sequence B=1 and nonempty sequences bounded by engine.max_len<=1024. Do not treat logical request cardinality as physical batch size.",
+    "Prohibit external mutation of cuBLAS handle pointer mode, math mode, stream or other configuration during executor use; the audited helpers pass host alpha/beta pointers.",
+    "Validate the audit identity through the acceptance driver before passing it to m2_route::open; MathModePin itself checks only that the string is nonempty.",
+    "Keep mapped model files immutable and deploy the model directory read-only.",
+    "Do not substitute plain GEMM, cuBLASLt, quantized GEMM, fused attention or replacement custom kernels without a new audit and acceptance run. The existing SoftmaxLastDim custom-op route is explicitly included.",
+    "Bind the final artifact to the full repository revision, Cargo.lock, preserved feature tree and every examined source-file hash. Confirm Candle uses cudarc 0.19.10 in the audited enabled graph; the orphan 0.17.8 lockfile entry is not the audited dependency.",
+    "Revalidate after dependency, feature, model-call-site, layout, CUDA/cuBLAS, driver or device changes.",
+    "Keep source-audit evidence separate from runtime numerical acceptance, determinism and bit-identity evidence. COMPUTE_32F and DEFAULT_TENSOR_OP do not identify a fixed internal cuBLAS algorithm."
+  ],
+  "blocking_item_resolution": [
+    {
+      "id": "R3_SCHEMA",
+      "status": "SOURCE_INPUT_CLOSED",
+      "evidence": "Sections 1 and 2 provide the R3 fields and audit_identity validator. Required top-level fields and six dispatch entries are present; final mechanical validation remains part of PROVENANCE_AND_VERIFICATION."
+    },
+    {
+      "id": "EXACT_LINE_INDEXING",
+      "status": "BOUNDARIES_POPULATED_PENDING_MECHANICAL_VERIFICATION",
+      "evidence": "Every examined region now has non-null boundaries taken from the supplied line-numbered text. Mechanical checking remains an integrator obligation."
+    },
+    {
+      "id": "PROJECTION_DTYPE_AND_LAYOUT",
+      "status": "SOURCE_REVIEW_CLOSED",
+      "evidence": "repo_model covers BF16 loading, merged construction, all four call sites and linear3; candle_nn_linear establishes the transposed-weight rank-2 path. Projection transpose selection is corrected to T/N."
+    },
+    {
+      "id": "STORAGE_DISPATCH",
+      "status": "SOURCE_REVIEW_CLOSED",
+      "evidence": "candle_storage::Storage::matmul at 769-798 explicitly connects Tensor::matmul to the CUDA backend."
+    },
+    {
+      "id": "SOFTMAX_OUTPUT",
+      "status": "SOURCE_REVIEW_CLOSED",
+      "evidence": "candle_nn_ops establishes the CUDA SoftmaxLastDim custom-op route and F32 output storage. Line 289 is identified as CPU implementation, not the executed CUDA implementation."
+    },
+    {
+      "id": "APPLICATION_CONTROL",
+      "status": "SOURCE_REVIEW_CLOSED",
+      "evidence": "repo_cuda_math, repo_m2_route and repo_model::IndependentExecutor establish initialization order, retained ownership, checks and poison propagation, with external exclusivity and transient-drift limitations explicit."
+    },
+    {
+      "id": "PROVENANCE_AND_VERIFICATION",
+      "status": "OPEN_INTEGRATOR_ACTION_REQUIRED",
+      "evidence": "The user authorizes deferred provenance and mechanical verification, but no completed verification results or final provenance are supplied."
+    }
+  ],
+  "blocking_items": []
+}
