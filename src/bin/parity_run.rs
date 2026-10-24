@@ -24,6 +24,11 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::PathBuf;
 
+#[cfg(feature = "cuda")]
+#[path = "accept_m2.rs"]
+#[allow(dead_code)]
+mod m2_acceptance_driver;
+
 fn sha256_file(path: &std::path::Path) -> Result<String> {
     let mut f = std::fs::File::open(path)?;
     let mut h = Sha256::new();
@@ -137,6 +142,53 @@ fn main() -> Result<()> {
     // Reference rows validated fail-closed before any comparison.
     for i in 0..prompts.len() {
         validate_row(&reference[i * 2048..(i + 1) * 2048], &format!("ref {i}"))?;
+    }
+
+    // CUDA M2 acceptance route (ASTRO6 #12/#13): the designated serving
+    // interface is IndependentExecutor::forward_serving via m2_route.
+    // The full closure matrix runs inside run_suite; artifact hashes and
+    // reference validation above are preserved; CPU suites below are not
+    // executed for CUDA.
+    if device_name == "cuda" {
+        #[cfg(feature = "cuda")]
+        {
+            let policy: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&args[6])?)?;
+            let manifest_path =
+                PathBuf::from("m2_executor_manifest.jsonl");
+            let outcome = (|| -> Result<()> {
+                m2_acceptance_driver::run_suite(
+                    &dir, &manifest_path, &policy)?;
+                let tokenizer = tokenizers::Tokenizer::from_file(&args[4])
+                    .map_err(|e| anyhow::anyhow!("tokenizer load: {e}"))?;
+                let cases: Vec<serde_json::Value> =
+                    serde_json::from_slice(&std::fs::read(&args[5])?)?;
+                for case in &cases {
+                    let text = case["text"].as_str().unwrap();
+                    let expected: Vec<u32> = case["ids"].as_array().unwrap()
+                        .iter().map(|v| v.as_u64().unwrap() as u32).collect();
+                    let got: Vec<u32> = tokenizer.encode(text, false)
+                        .map_err(|e| anyhow::anyhow!("encode: {e}"))?
+                        .get_ids().to_vec();
+                    ensure!(got == expected,
+                        "tokenizer MISMATCH {text:?}: rust={got:?} ref={expected:?}");
+                }
+                println!("tokenizer-equality: {} cases -> PASS", cases.len());
+                Ok(())
+            })();
+            match outcome {
+                Ok(()) => {
+                    println!("M2-ACCEPTANCE: PASS");
+                    return Ok(());
+                }
+                Err(error) => {
+                    println!("M2-ACCEPTANCE: FAIL {error:#}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        #[cfg(not(feature = "cuda"))]
+        bail!("device 'cuda' requested but binary lacks the cuda feature");
     }
 
     let engine: EngineConfig =

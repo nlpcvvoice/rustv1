@@ -1,128 +1,163 @@
 use anyhow::{ensure, Result};
+use candle_core::cuda_backend::{
+    gemm_reduced_precision_bf16,
+    gemm_reduced_precision_f16,
+    gemm_reduced_precision_f32,
+    set_gemm_reduced_precision_bf16,
+    set_gemm_reduced_precision_f16,
+    set_gemm_reduced_precision_f32,
+};
 use serde_json::{json, Value};
 use std::{
-    ffi::c_void,
+    cell::Cell,
     marker::PhantomData,
-    ptr::NonNull,
     rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
     thread::{self, ThreadId},
 };
 
-#[link(name = "cublas")]
-unsafe extern "C" {
-    fn cublasGetVersion_v2(handle: *mut c_void, version: *mut i32) -> i32;
-    fn cublasGetStream_v2(handle: *mut c_void, stream: *mut *mut c_void) -> i32;
-    fn cublasGetMathMode(handle: *mut c_void, mode: *mut i32) -> i32;
-    fn cublasSetMathMode(handle: *mut c_void, mode: i32) -> i32;
-    fn cublasGetAtomicsMode(handle: *mut c_void, mode: *mut i32) -> i32;
-    fn cublasSetAtomicsMode(handle: *mut c_void, mode: i32) -> i32;
+// This prevents duplicate owners through THIS module. It cannot interpose on
+// calls to Candle's public setters made elsewhere in the process.
+static PIN_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy)]
+struct Settings {
+    f32: bool,
+    f16: bool,
+    bf16: bool,
 }
 
-const CUBLAS_DEFAULT_MATH: i32 = 0;
-const CUBLAS_ATOMICS_NOT_ALLOWED: i32 = 0;
+impl Settings {
+    fn read() -> Self {
+        Self {
+            f32: gemm_reduced_precision_f32(),
+            f16: gemm_reduced_precision_f16(),
+            bf16: gemm_reduced_precision_bf16(),
+        }
+    }
 
-fn status(code: i32, operation: &str) -> Result<()> {
-    ensure!(code == 0, "{operation}: cuBLAS status {code}");
-    Ok(())
+    fn all_disabled(self) -> bool {
+        !self.f32 && !self.f16 && !self.bf16
+    }
+
+    fn json(self) -> Value {
+        json!({
+            "f32": self.f32,
+            "f16": self.f16,
+            "bf16": self.bf16
+        })
+    }
 }
 
+/// Process-wide Candle CUDA GEMM policy owner.
+///
+/// Operational contract:
+/// - Acquire before model loading, warmup, or any GPU work.
+/// - No other code may change Candle's reduced-precision settings.
+/// - No other executor may overlap this executor's device/stream work.
+/// - Retain this object for the entire execution lifetime.
+///
+/// These are operational restrictions, not Rust memory-safety preconditions.
+/// Therefore construction is safe and does not accept a raw CUDA handle.
 pub struct MathModePin {
-    handle: NonNull<c_void>,
-    stream: *mut c_void,
-    version: i32,
-    original_math_mode: i32,
-    original_atomics_mode: i32,
     audit_identity: String,
+    original: Settings,
     owner: ThreadId,
+    drifted: Cell<bool>,
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
 impl MathModePin {
-    /// # Safety
-    ///
-    /// - handle is Candle's LIVE cuBLAS handle, not a newly created handle.
-    /// - handle remains alive for this object's entire lifetime.
-    /// - this thread owns the handle and its stream exclusively.
-    /// - the locked backend call path was audited: it does not override math
-    ///   mode per operation, use FAST_TF32 compute types, or route these FP32
-    ///   matmuls through a separately configured cuBLASLt handle.
-    /// - audit_identity identifies the audited backend sources/build.
-    ///
-    /// This function pins DEFAULT_MATH and disallows atomics. If those differ
-    /// from the accepted F run, this is a changed configuration requiring a
-    /// fresh unchanged-threshold acceptance run, not retrospective certification.
-    pub unsafe fn from_audited_candle_handle(
-        handle: *mut c_void,
-        audit_identity: String,
-    ) -> Result<Self> {
-        ensure!(!audit_identity.trim().is_empty(), "missing backend audit identity");
-        let handle = NonNull::new(handle).ok_or_else(|| anyhow::anyhow!("null handle"))?;
+    pub fn pin(audit_identity: impl Into<String>) -> Result<Self> {
+        let audit_identity = audit_identity.into();
+        ensure!(
+            !audit_identity.trim().is_empty(),
+            "missing locked-source audit identity"
+        );
 
-        let mut version = 0;
-        let mut stream = std::ptr::null_mut();
-        let mut original_math_mode = 0;
-        let mut original_atomics_mode = 0;
+        ensure!(
+            PIN_ACTIVE
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok(),
+            "a process-global MathModePin already exists"
+        );
 
-        unsafe {
-            status(cublasGetVersion_v2(handle.as_ptr(), &mut version), "get version")?;
-            status(cublasGetStream_v2(handle.as_ptr(), &mut stream), "get stream")?;
-            status(cublasGetMathMode(handle.as_ptr(), &mut original_math_mode), "get math")?;
-            status(
-                cublasGetAtomicsMode(handle.as_ptr(), &mut original_atomics_mode),
-                "get atomics",
-            )?;
-            status(
-                cublasSetMathMode(handle.as_ptr(), CUBLAS_DEFAULT_MATH),
-                "set math",
-            )?;
-            status(
-                cublasSetAtomicsMode(handle.as_ptr(), CUBLAS_ATOMICS_NOT_ALLOWED),
-                "set atomics",
-            )?;
-        }
-
-        let result = Self {
-            handle,
-            stream,
-            version,
-            original_math_mode,
-            original_atomics_mode,
+        // Construct the guard before changing settings so any later error
+        // releases PIN_ACTIVE via Drop.
+        let pin = Self {
             audit_identity,
+            original: Settings::read(),
             owner: thread::current().id(),
+            drifted: Cell::new(false),
             _not_send_sync: PhantomData,
         };
-        result.check()?;
-        Ok(result)
+
+        // These are three separate atomic stores, not a transactional update.
+        // The startup-before-work contract is therefore essential.
+        set_gemm_reduced_precision_f32(false);
+        set_gemm_reduced_precision_f16(false);
+        set_gemm_reduced_precision_bf16(false);
+
+        pin.check()?;
+        Ok(pin)
     }
 
     pub fn check(&self) -> Result<Value> {
-        ensure!(thread::current().id() == self.owner, "cuBLAS owner thread changed");
-        let mut stream = std::ptr::null_mut();
-        let mut math = -1;
-        let mut atomics = -1;
-        unsafe {
-            status(cublasGetStream_v2(self.handle.as_ptr(), &mut stream), "get stream")?;
-            status(cublasGetMathMode(self.handle.as_ptr(), &mut math), "get math")?;
-            status(cublasGetAtomicsMode(self.handle.as_ptr(), &mut atomics), "get atomics")?;
+        ensure!(
+            thread::current().id() == self.owner,
+            "math policy owner thread changed"
+        );
+        ensure!(
+            !self.drifted.get(),
+            "math policy previously drifted; restart the process"
+        );
+
+        let observed = Settings::read();
+        if !observed.all_disabled() {
+            self.drifted.set(true);
+            anyhow::bail!(
+                "Candle GEMM policy drift: f32={}, f16={}, bf16={}; restart required",
+                observed.f32,
+                observed.f16,
+                observed.bf16
+            );
         }
-        ensure!(stream == self.stream, "Candle cuBLAS stream changed");
-        ensure!(math == CUBLAS_DEFAULT_MATH, "cuBLAS math mode changed: {math}");
-        ensure!(atomics == CUBLAS_ATOMICS_NOT_ALLOWED,
-            "cuBLAS atomics mode changed: {atomics}");
 
         Ok(json!({
-            "cublas_version": self.version,
-            "handle_identity": format!("{:p}", self.handle.as_ptr()),
-            "stream_identity": format!("{:p}", stream),
-            "math_mode": math,
-            "math_mode_name": "CUBLAS_DEFAULT_MATH",
-            "atomics_mode": atomics,
-            "original_math_mode": self.original_math_mode,
-            "original_atomics_mode": self.original_atomics_mode,
-            "fp32_call_path_audit": self.audit_identity,
-            "tf32_claim_basis": "handle_query_plus_locked_call_path_audit",
-            "NVIDIA_TF32_OVERRIDE": std::env::var("NVIDIA_TF32_OVERRIDE").ok(),
-            "CUBLAS_WORKSPACE_CONFIG": std::env::var("CUBLAS_WORKSPACE_CONFIG").ok()
+            "policy": "candle_cuda_gemm_no_reduced_precision_v1",
+            "verification": "source_audit_plus_process_global_pin",
+            "audit_identity": self.audit_identity,
+            "candle_core_version": "0.9.2",
+            "control_scope": "process_global_Candle_CUDA_dispatch",
+            "reduced_precision": observed.json(),
+            "original_reduced_precision": self.original.json(),
+            "audited_compute_type": {
+                "f32_strided_batched": "CUBLAS_COMPUTE_32F",
+                "bf16_strided_batched": "CUBLAS_COMPUTE_32F"
+            },
+            "profile_F_mapping": {
+                "bf16_projections": "MM_BF16_REDUCED_PRECISION",
+                "widened_f32_QK": "MM_F32_REDUCED_PRECISION",
+                "widened_f32_PV": "MM_F32_REDUCED_PRECISION",
+                "f16": "not_used"
+            },
+            "ownership": "one_policy_owner_no_other_setter_calls",
+            "check_semantics": "snapshot_with_sticky_detected_drift",
+            "raw_handle_attributes_queried": false,
+            "cublas_atomics_mode_pinned": false,
+            "internal_kernel_selection_verified": false,
+            "NVIDIA_TF32_OVERRIDE": std::env::var_os("NVIDIA_TF32_OVERRIDE")
+                .map(|v| v.to_string_lossy().into_owned()),
+            "CUBLAS_WORKSPACE_CONFIG": std::env::var_os("CUBLAS_WORKSPACE_CONFIG")
+                .map(|v| v.to_string_lossy().into_owned())
         }))
+    }
+}
+
+impl Drop for MathModePin {
+    fn drop(&mut self) {
+        // Deliberately leave all settings unchanged. Restoring old settings
+        // would introduce an implicit global policy transition.
+        PIN_ACTIVE.store(false, Ordering::Release);
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::{bail, ensure, Context, Result};
-use candle_core::{DType, Device, IndexOp, Tensor, D};
+use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};
 use serde::Deserialize;
 use serde_json::Value;
@@ -1009,33 +1009,35 @@ pub struct IndependentExecutor {
 
 #[cfg(feature = "cuda")]
 impl IndependentExecutor {
-    /// # Safety
+    /// Construct on the executor's owning thread.
     ///
-    /// `math` must refer to the cuBLAS handle actually used by `device`.
-    /// The device, its stream, and its cuBLAS handle must not be used or
-    /// reconfigured by another owner while this executor exists.
+    /// Operational requirements:
+    /// - `math` was acquired before any model execution or warmup.
+    /// - No other code changes Candle's process-global GEMM settings.
+    /// - The device and its stream are not concurrently used by another owner.
     ///
-    /// Construct and use this object on the dedicated executor thread.
-    /// The backend source audit required by MathModePin must cover the
-    /// locked Candle/cudarc build used here.
-    pub unsafe fn load(
-        dir: &Path,
+    /// No raw-handle binding or unsafe call is required.
+    pub fn load(
+        dir: &std::path::Path,
         device: Device,
         engine: EngineConfig,
         math: crate::cuda_math::MathModePin,
-        manifest_path: &Path,
+        manifest_path: &std::path::Path,
     ) -> Result<Self> {
         use std::io::Write;
 
-        ensure!(matches!(device, Device::Cuda(_)), "CUDA required");
+        ensure!(matches!(&device, Device::Cuda(_)), "CUDA required");
         ensure!(engine.max_seqs > 0, "invalid max_seqs");
-        ensure!(engine.max_tokens >= engine.max_len, "one sequence must fit");
+        ensure!(engine.max_len > 0, "invalid max_len");
+        ensure!(
+            engine.max_tokens >= engine.max_len,
+            "one sequence must fit"
+        );
         math.check()?;
 
         let model = Model::load(dir, device, engine, DType::BF16)?
             .with_precision(crate::precision::PrecisionProfile::F);
 
-        // create_new avoids accidentally appending a new run to an old manifest.
         let mut manifest = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -1044,6 +1046,8 @@ impl IndependentExecutor {
         serde_json::to_writer(&mut manifest, &serde_json::json!({
             "kind": "executor_start",
             "execution_policy": "independent_sequence_v1",
+            "serving_route_scope": "in_process_token_ID_API",
+            "http_certified": false,
             "profile": "F",
             "weights_and_projections": "BF16",
             "norm_activation_attention": "widened_as_defined_by_F",
@@ -1066,8 +1070,13 @@ impl IndependentExecutor {
         })
     }
 
+    pub fn is_poisoned(&self) -> bool {
+        self.poisoned
+    }
+
     fn record(&mut self, value: &serde_json::Value) -> Result<()> {
         use std::io::Write;
+
         serde_json::to_writer(&mut self.manifest, value)?;
         self.manifest.write_all(b"\n")?;
         self.manifest.flush()?;
@@ -1075,35 +1084,59 @@ impl IndependentExecutor {
         Ok(())
     }
 
-    pub fn forward_serving(&mut self, sequences: &[Vec<u32>])
-        -> Result<Vec<Vec<f32>>>
-    {
-        ensure!(!self.poisoned, "executor is poisoned; restart required");
+    pub fn forward_serving(
+        &mut self,
+        sequences: &[Vec<u32>],
+    ) -> Result<Vec<Vec<f32>>> {
+        ensure!(
+            !self.poisoned,
+            "executor is poisoned; restart the process"
+        );
         ensure!(!sequences.is_empty(), "empty request");
 
-        // Validate the whole logical request before launching any of it.
+        // Reject the entire invalid logical request before launching anything.
+        // Logical input count is not a physical GPU batch count.
         for sequence in sequences {
             ensure!(
-                !sequence.is_empty() && sequence.len() <= self.model.engine.max_len,
+                !sequence.is_empty()
+                    && sequence.len() <= self.model.engine.max_len,
                 "invalid sequence length"
             );
             ensure!(
-                sequence.iter().all(|&id|
+                sequence.iter().all(|&id| {
                     id != self.model.cfg.pad_token_id
-                        && (id as usize) < self.model.cfg.vocab_size),
+                        && (id as usize) < self.model.cfg.vocab_size
+                }),
                 "padding or out-of-vocabulary token"
             );
         }
 
+        // All operational failures, including math checks, counters and
+        // manifest writes, leave this true. An unwinding panic also leaves it
+        // true if a caller catches that panic and retains the object.
+        self.poisoned = true;
+        let result = self.forward_validated(sequences);
+        if result.is_ok() {
+            self.poisoned = false;
+        }
+        result
+    }
+
+    fn forward_validated(
+        &mut self,
+        sequences: &[Vec<u32>],
+    ) -> Result<Vec<Vec<f32>>> {
         let mut rows = Vec::with_capacity(sequences.len());
+
         for (request_row, sequence) in sequences.iter().enumerate() {
             let math = self.math.check()?;
             let forward_id = self.next_forward;
-            self.next_forward = self.next_forward.checked_add(1)
+            self.next_forward = self.next_forward
+                .checked_add(1)
                 .context("forward counter overflow")?;
+
             let digest = crate::precision::token_digest(sequence);
 
-            // Persist before launch, so an interrupted forward remains visible.
             self.record(&serde_json::json!({
                 "kind": "physical_forward_begin",
                 "forward_id": forward_id,
@@ -1116,46 +1149,42 @@ impl IndependentExecutor {
                 "math": math
             }))?;
 
-            // Any execution, validation, or manifest failure prevents reuse.
-            self.poisoned = true;
             let result = (|| -> Result<Vec<f32>> {
-                let output = self.model.forward(std::slice::from_ref(sequence))?;
+                let output = self.model.forward(
+                    std::slice::from_ref(sequence),
+                )?;
                 ensure!(output.len() == 1, "physical forward cardinality");
-                let row = output.into_iter().next().unwrap();
+
+                let row = output.into_iter().next()
+                    .context("missing physical forward output")?;
                 ensure!(row.len() == 2048, "embedding width");
-                ensure!(row.iter().all(|x| x.is_finite()), "nonfinite embedding");
+                ensure!(
+                    row.iter().all(|x| x.is_finite()),
+                    "nonfinite embedding"
+                );
+
                 let norm = row.iter()
                     .map(|&x| f64::from(x).powi(2))
                     .sum::<f64>()
                     .sqrt();
-                ensure!((norm - 1.0).abs() <= 1e-5, "embedding norm {norm}");
-                // D2H above completes output production. Recheck configuration.
+
+                ensure!(
+                    norm.is_finite() && (norm - 1.0).abs() <= 1e-5,
+                    "embedding norm {norm}"
+                );
+
+                // Model::forward has retrieved the output to host.
                 self.math.check()?;
                 Ok(row)
             })();
 
-            match result {
-                Ok(row) => {
-                    let bytes: Vec<u8> = row.iter()
-                        .flat_map(|x| x.to_le_bytes())
-                        .collect();
-                    use sha2::{Digest, Sha256};
-                    self.record(&serde_json::json!({
-                        "kind": "physical_forward_end",
-                        "forward_id": forward_id,
-                        "token_sha256": digest,
-                        "B": 1,
-                        "S": sequence.len(),
-                        "profile": "F",
-                        "status": "ok",
-                        "output_sha256": format!("{:x}", Sha256::digest(&bytes)),
-                        "math": self.math.check()?
-                    }))?;
-                    self.poisoned = false;
-                    rows.push(row);
-                }
+            let row = match result {
+                Ok(row) => row,
                 Err(error) => {
-                    self.record(&serde_json::json!({
+                    // Preserve the original execution error. If error logging
+                    // also fails, the begin record remains incomplete and the
+                    // executor remains poisoned.
+                    let _ = self.record(&serde_json::json!({
                         "kind": "physical_forward_end",
                         "forward_id": forward_id,
                         "token_sha256": digest,
@@ -1164,11 +1193,32 @@ impl IndependentExecutor {
                         "profile": "F",
                         "status": "error",
                         "error": format!("{error:#}")
-                    }))?;
+                    }));
                     return Err(error);
                 }
-            }
+            };
+
+            use sha2::{Digest, Sha256};
+            let bytes: Vec<u8> = row.iter()
+                .flat_map(|x| x.to_le_bytes())
+                .collect();
+
+            let math = self.math.check()?;
+            self.record(&serde_json::json!({
+                "kind": "physical_forward_end",
+                "forward_id": forward_id,
+                "token_sha256": digest,
+                "B": 1,
+                "S": sequence.len(),
+                "profile": "F",
+                "status": "ok",
+                "output_sha256": format!("{:x}", Sha256::digest(&bytes)),
+                "math": math
+            }))?;
+
+            rows.push(row);
         }
+
         Ok(rows)
     }
 }

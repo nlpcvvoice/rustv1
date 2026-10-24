@@ -67,12 +67,24 @@ fn main() -> Result<()> {
         serde_json::from_slice(&std::fs::read("results/prompts.json")?)?;
     let engine: EngineConfig =
         serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
+    let audit_identity = std::env::var("RV1_CUDA_MATH_AUDIT")
+        .map_err(|_| anyhow::anyhow!(
+            "RV1_CUDA_MATH_AUDIT must identify the locked-source audit artifact"
+        ))?;
+    let math = rustv1::cuda_math::MathModePin::pin(audit_identity)?;
     let device = Device::new_cuda(0)?;
     let model = Model::load(&dir, device, engine, DType::BF16)?
         .with_precision(profile);
 
     let stdout = io::stdout();
     let mut output = io::BufWriter::new(stdout.lock());
+
+    serde_json::to_writer(&mut output, &json!({
+        "kind": "math_policy",
+        "math": math.check()?
+    }))?;
+    output.write_all(b"\n")?;
+    output.flush()?;
 
     for sample in samples {
         let ids = prompts.get(sample)
@@ -88,6 +100,7 @@ fn main() -> Result<()> {
         }))?;
         output.write_all(b"\n")?;
 
+        math.check()?;
         let states = {
             let mut sink = |layer: isize, name: &str, tensor: &Tensor| -> Result<()> {
                 if layer_spec != "all" && !layers.contains(&layer) {
@@ -110,6 +123,7 @@ fn main() -> Result<()> {
             .clamp(1e-12, f64::INFINITY)?;
         let embedding = pooled.broadcast_div(&denominator)?;
 
+        math.check()?;
         emit_tensor(
             &mut output, sample, &digest, -1, "pooled.pre_l2", &pooled.i(0)?,
         )?;

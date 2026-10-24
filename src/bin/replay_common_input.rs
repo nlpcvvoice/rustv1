@@ -191,6 +191,11 @@ fn main() -> Result<()> {
 
     let engine: EngineConfig =
         serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
+    let audit_identity = std::env::var("RV1_CUDA_MATH_AUDIT")
+        .map_err(|_| anyhow::anyhow!(
+            "RV1_CUDA_MATH_AUDIT must identify the locked-source audit artifact"
+        ))?;
+    let math = rustv1::cuda_math::MathModePin::pin(audit_identity)?;
     let device = Device::new_cuda(0)?;
     let model = Model::load(&dir, device.clone(), engine, DType::BF16)?
         .with_precision(PrecisionProfile::F);
@@ -273,6 +278,7 @@ fn main() -> Result<()> {
     )?;
     let reference_values = reference.flatten_all()?.to_vec1::<f32>()?;
 
+    math.check()?;
     for (implementation, result) in model.replay_common_input(
         op, layer.max(0) as usize, &inputs,
     )? {
@@ -288,7 +294,7 @@ fn main() -> Result<()> {
             "implementation": implementation,
             "reference_stage": output_stage,
             "shape": result.dims(),
-            "math_mode": "unverified_until_actual_Candle_handle_is_bound",
+            "math_mode": math.check()?,
             "norm_semantics": "Rust_separate_rounded_add_then_RMSNorm",
             "rotary_cache": "Rust_executed_cache",
             "metrics": comparison_metrics(&values, &reference_values)?
