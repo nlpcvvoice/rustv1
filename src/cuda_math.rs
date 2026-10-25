@@ -1,10 +1,7 @@
 use anyhow::{ensure, Result};
 use candle_core::cuda_backend::{
-    gemm_reduced_precision_bf16,
-    gemm_reduced_precision_f16,
-    gemm_reduced_precision_f32,
-    set_gemm_reduced_precision_bf16,
-    set_gemm_reduced_precision_f16,
+    gemm_reduced_precision_bf16, gemm_reduced_precision_f16, gemm_reduced_precision_f32,
+    set_gemm_reduced_precision_bf16, set_gemm_reduced_precision_f16,
     set_gemm_reduced_precision_f32,
 };
 use serde_json::{json, Value};

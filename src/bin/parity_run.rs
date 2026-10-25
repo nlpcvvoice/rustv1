@@ -35,7 +35,9 @@ fn sha256_file(path: &std::path::Path) -> Result<String> {
     let mut buf = vec![0u8; 1 << 20];
     loop {
         let n = f.read(&mut buf)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         h.update(&buf[..n]);
     }
     Ok(format!("{:x}", h.finalize()))
@@ -43,10 +45,17 @@ fn sha256_file(path: &std::path::Path) -> Result<String> {
 
 fn read_f32(path: &str) -> Result<Vec<f32>> {
     let bytes = std::fs::read(path)?;
-    ensure!(bytes.len() % 4 == 0,
-        "reference file size {} is not a multiple of 4", bytes.len());
-    Ok(bytes.chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+    ensure!(
+        bytes.len() % 4 == 0,
+        "reference file size {} is not a multiple of 4",
+        bytes.len()
+    );
+    Ok(bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(f32::from_le_bytes)
         .collect())
 }
 
@@ -56,57 +65,78 @@ fn norm_f64(v: &[f32]) -> f64 {
 
 fn validate_row(v: &[f32], label: &str) -> Result<()> {
     ensure!(v.len() == 2048, "{label}: dim {} != 2048", v.len());
-    ensure!(v.iter().all(|x| x.is_finite()), "{label}: non-finite component");
+    ensure!(
+        v.iter().all(|x| x.is_finite()),
+        "{label}: non-finite component"
+    );
     let n = norm_f64(v);
     ensure!(n.is_finite() && n > 0.0, "{label}: invalid norm {n}");
-    ensure!((n - 1.0).abs() <= 1e-5, "{label}: |norm-1| = {:.2e} > 1e-5",
-        (n - 1.0).abs());
+    ensure!(
+        (n - 1.0).abs() <= 1e-5,
+        "{label}: |norm-1| = {:.2e} > 1e-5",
+        (n - 1.0).abs()
+    );
     Ok(())
 }
 
 fn compare(emb: &[f32], reference: &[f32]) -> Result<(f64, f64)> {
-    ensure!(emb.len() == reference.len(),
-        "compare: dimension mismatch {} vs {}", emb.len(), reference.len());
-    let dot: f64 = emb.iter().zip(reference)
-        .map(|(a, b)| *a as f64 * *b as f64).sum();
+    ensure!(
+        emb.len() == reference.len(),
+        "compare: dimension mismatch {} vs {}",
+        emb.len(),
+        reference.len()
+    );
+    let dot: f64 = emb
+        .iter()
+        .zip(reference)
+        .map(|(a, b)| *a as f64 * *b as f64)
+        .sum();
     let na = norm_f64(emb);
     let nb = norm_f64(reference);
     let cosine = dot / (na * nb);
-    let max_abs = emb.iter().zip(reference)
+    let max_abs = emb
+        .iter()
+        .zip(reference)
         .map(|(a, b)| (*a as f64 - *b as f64).abs())
         .fold(0.0f64, f64::max);
-    ensure!(cosine.is_finite() && max_abs.is_finite(),
-        "non-finite comparison metric");
+    ensure!(
+        cosine.is_finite() && max_abs.is_finite(),
+        "non-finite comparison metric"
+    );
     Ok((cosine, max_abs))
 }
 
 fn bit_identical(a: &[f32], b: &[f32]) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
 }
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    ensure!(args.len() == 9,
+    ensure!(
+        args.len() == 9,
         "usage: parity_run MODEL_DIR PROMPTS_JSON REFERENCE_F32 \
          TOKENIZER_JSON TOKENIZATION_JSON EXCEPTION_POLICY_JSON \
-         DEVICE,DTYPE  PRECISION_PROFILE(A..F)");
+         DEVICE,DTYPE  PRECISION_PROFILE(A..F)"
+    );
     println!("acceptance command: {}", args[1..].join(" "));
 
     // Explicit device, dtype, and precision profile; no silent defaults.
     let (device_name, dtype_name) = {
         let mut it = args[7].split(',');
-        (it.next().unwrap_or("").to_string(),
-         it.next().unwrap_or("").to_string())
+        (
+            it.next().unwrap_or("").to_string(),
+            it.next().unwrap_or("").to_string(),
+        )
     };
-    let profile: rustv1::precision::PrecisionProfile =
-        args[8].parse()?;
+    let profile: rustv1::precision::PrecisionProfile = args[8].parse()?;
     println!("precision_profile: {profile:?}");
     let device = match device_name.as_str() {
         "cpu" => Device::Cpu,
         "cuda" => {
-            ensure!(candle_core::utils::cuda_is_available(),
-                "device 'cuda' requested but CUDA backend not compiled in");
+            ensure!(
+                candle_core::utils::cuda_is_available(),
+                "device 'cuda' requested but CUDA backend not compiled in"
+            );
             // The CUDA acceptance branch below never uses this handle:
             // m2_route::open pins the math policy before creating the
             // process's only CudaDevice. Placeholder avoids a pre-pin
@@ -125,8 +155,12 @@ fn main() -> Result<()> {
     let dir = PathBuf::from(&args[1]);
     let prompts: Vec<Vec<u32>> = serde_json::from_slice(&std::fs::read(&args[2])?)?;
     let reference = read_f32(&args[3])?;
-    ensure!(reference.len() == prompts.len() * 2048,
-        "reference {} != {} x 2048", reference.len(), prompts.len());
+    ensure!(
+        reference.len() == prompts.len() * 2048,
+        "reference {} != {} x 2048",
+        reference.len(),
+        prompts.len()
+    );
 
     // Artifact manifest ties this acceptance to exact inputs.
     for (name, p) in [
@@ -138,7 +172,10 @@ fn main() -> Result<()> {
         ("reference.f32", PathBuf::from(&args[3])),
         ("tokenization_cases.json", PathBuf::from(&args[5])),
         ("exception_policy.json", PathBuf::from(&args[6])),
-        ("Cargo.lock", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock")),
+        (
+            "Cargo.lock",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.lock"),
+        ),
     ] {
         println!("sha256 {name} = {}", sha256_file(&p)?);
     }
@@ -156,26 +193,31 @@ fn main() -> Result<()> {
     if device_name == "cuda" {
         #[cfg(feature = "cuda")]
         {
-            let policy: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(&args[6])?)?;
-            let manifest_path =
-                PathBuf::from("m2_executor_manifest.jsonl");
+            let policy: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[6])?)?;
+            let manifest_path = PathBuf::from("m2_executor_manifest.jsonl");
             let outcome = (|| -> Result<()> {
-                m2_acceptance_driver::run_suite(
-                    &dir, &manifest_path, &policy)?;
+                m2_acceptance_driver::run_suite(&dir, &manifest_path, &policy)?;
                 let tokenizer = tokenizers::Tokenizer::from_file(&args[4])
                     .map_err(|e| anyhow::anyhow!("tokenizer load: {e}"))?;
                 let cases: Vec<serde_json::Value> =
                     serde_json::from_slice(&std::fs::read(&args[5])?)?;
                 for case in &cases {
                     let text = case["text"].as_str().unwrap();
-                    let expected: Vec<u32> = case["ids"].as_array().unwrap()
-                        .iter().map(|v| v.as_u64().unwrap() as u32).collect();
-                    let got: Vec<u32> = tokenizer.encode(text, false)
+                    let expected: Vec<u32> = case["ids"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|v| v.as_u64().unwrap() as u32)
+                        .collect();
+                    let got: Vec<u32> = tokenizer
+                        .encode(text, false)
                         .map_err(|e| anyhow::anyhow!("encode: {e}"))?
-                        .get_ids().to_vec();
-                    ensure!(got == expected,
-                        "tokenizer MISMATCH {text:?}: rust={got:?} ref={expected:?}");
+                        .get_ids()
+                        .to_vec();
+                    ensure!(
+                        got == expected,
+                        "tokenizer MISMATCH {text:?}: rust={got:?} ref={expected:?}"
+                    );
                 }
                 println!("tokenizer-equality: {} cases -> PASS", cases.len());
                 Ok(())
@@ -195,12 +237,13 @@ fn main() -> Result<()> {
         bail!("device 'cuda' requested but binary lacks the cuda feature");
     }
 
-    let engine: EngineConfig =
-        serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
-    let model = Model::load(&dir, device, engine.clone(), dtype)?
-        .with_precision(profile);
-    println!("loaded; {} prompts, lengths {:?}", prompts.len(),
-        prompts.iter().map(Vec::len).collect::<Vec<_>>());
+    let engine: EngineConfig = serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
+    let model = Model::load(&dir, device, engine.clone(), dtype)?.with_precision(profile);
+    println!(
+        "loaded; {} prompts, lengths {:?}",
+        prompts.len(),
+        prompts.iter().map(Vec::len).collect::<Vec<_>>()
+    );
 
     let mut pass = true;
 
@@ -208,7 +251,7 @@ fn main() -> Result<()> {
     let started = std::time::Instant::now();
     let mut single: Vec<Vec<f32>> = Vec::with_capacity(prompts.len());
     for (i, p) in prompts.iter().enumerate() {
-        let out = model.forward(&[p.clone()])?;
+        let out = model.forward(std::slice::from_ref(p))?;
         ensure!(out.len() == 1, "singleton {i}: got {} rows", out.len());
         validate_row(&out[0], &format!("singleton {i}"))?;
         single.push(out.into_iter().next().unwrap());
@@ -221,46 +264,64 @@ fn main() -> Result<()> {
     // ids. Duplicate, out-of-range, or digest-mismatched indices are
     // rejected: the exemption cannot be detached from the approved
     // sample identity.
-    let policy: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&args[6])?)?;
-    ensure!(policy["version"].as_u64() == Some(2),
-        "exception policy version must be 2");
+    let policy: serde_json::Value = serde_json::from_slice(&std::fs::read(&args[6])?)?;
+    ensure!(
+        policy["version"].as_u64() == Some(2),
+        "exception policy version must be 2"
+    );
     let mut diagnostics: Vec<usize> = Vec::new();
-    for s in policy["samples"].as_array().context("policy: samples array")? {
+    for s in policy["samples"]
+        .as_array()
+        .context("policy: samples array")?
+    {
         let idx = s["index"].as_u64().context("policy: index")? as usize;
         ensure!(idx < prompts.len(), "policy: index {idx} out of range");
         ensure!(!diagnostics.contains(&idx), "policy: duplicate index {idx}");
         let want = s["ids_sha256"].as_str().context("policy: ids_sha256")?;
         let mut h = Sha256::new();
-        for t in &prompts[idx] { h.update(t.to_le_bytes()); }
+        for t in &prompts[idx] {
+            h.update(t.to_le_bytes());
+        }
         let got = format!("{:x}", h.finalize());
-        ensure!(got == want,
+        ensure!(
+            got == want,
             "policy: sample {idx} token digest mismatch (got {got}); \
-             the corpus no longer matches the approved exception identity");
-        println!("exception v{} enforced: sample {idx} bound to digest {got}",
-            policy["version"].as_u64().unwrap());
+             the corpus no longer matches the approved exception identity"
+        );
+        println!(
+            "exception v{} enforced: sample {idx} bound to digest {got}",
+            policy["version"].as_u64().unwrap()
+        );
         diagnostics.push(idx);
     }
 
     for (i, emb) in single.iter().enumerate() {
-        let (cosine, max_abs) =
-            compare(emb, &reference[i * 2048..(i + 1) * 2048])?;
+        let (cosine, max_abs) = compare(emb, &reference[i * 2048..(i + 1) * 2048])?;
         let ok = cosine > 0.999 && max_abs <= 0.01;
         if diagnostics.contains(&i) {
-            println!("sample {i}: len={} cosine={cosine:.6} max_abs={max_abs:.5} \
+            println!(
+                "sample {i}: len={} cosine={cosine:.6} max_abs={max_abs:.5} \
                      DIAGNOSTIC (not gated; see exception_policy.json)",
-                prompts[i].len());
+                prompts[i].len()
+            );
         } else {
             pass &= ok;
-            println!("sample {i}: len={} cosine={cosine:.6} max_abs={max_abs:.5} {}",
-                prompts[i].len(), if ok { "PASS" } else { "FAIL" });
+            println!(
+                "sample {i}: len={} cosine={cosine:.6} max_abs={max_abs:.5} {}",
+                prompts[i].len(),
+                if ok { "PASS" } else { "FAIL" }
+            );
         }
     }
 
     // Batch suites under serving budgets: actual tokens and padded
     // B x max_len must both fit max_tokens; at most max_seqs per batch.
-    fn budget_groups(prompts: &[Vec<u32>], order: &[usize],
-                     max_seqs: usize, max_tokens: usize) -> Vec<Vec<usize>> {
+    fn budget_groups(
+        prompts: &[Vec<u32>],
+        order: &[usize],
+        max_seqs: usize,
+        max_tokens: usize,
+    ) -> Vec<Vec<usize>> {
         let mut groups: Vec<Vec<usize>> = Vec::new();
         let mut cur: Vec<usize> = Vec::new();
         let mut tokens = 0usize;
@@ -282,18 +343,31 @@ fn main() -> Result<()> {
             tokens += l;
             max_len = max_len.max(l);
         }
-        if !cur.is_empty() { groups.push(cur); }
+        if !cur.is_empty() {
+            groups.push(cur);
+        }
         groups
     }
 
-    fn check_batch(model: &Model, prompts: &[Vec<u32>], group: &[usize],
-                   single: &[Vec<f32>], label: &str,
-                   worst_cos: &mut f64, worst_abs: &mut f64,
-                   n: &mut usize) -> Result<()> {
+    #[allow(clippy::too_many_arguments)]
+    fn check_batch(
+        model: &Model,
+        prompts: &[Vec<u32>],
+        group: &[usize],
+        single: &[Vec<f32>],
+        label: &str,
+        worst_cos: &mut f64,
+        worst_abs: &mut f64,
+        n: &mut usize,
+    ) -> Result<()> {
         let seqs: Vec<_> = group.iter().map(|&i| prompts[i].clone()).collect();
         let outs = model.forward(&seqs)?;
-        ensure!(outs.len() == seqs.len(),
-            "{label}: got {} rows for {} sequences", outs.len(), seqs.len());
+        ensure!(
+            outs.len() == seqs.len(),
+            "{label}: got {} rows for {} sequences",
+            outs.len(),
+            seqs.len()
+        );
         for (k, &i) in group.iter().enumerate() {
             validate_row(&outs[k], &format!("{label} seq {i}"))?;
             let (cosine, max_abs) = compare(&outs[k], &single[i])?;
@@ -308,10 +382,13 @@ fn main() -> Result<()> {
     let mut rev = idx.clone();
     rev.reverse();
     let mut shuffled = idx.clone();
-    {   // deterministic Fisher-Yates (LCG, fixed seed)
+    {
+        // deterministic Fisher-Yates (LCG, fixed seed)
         let mut s = 0x5EEDu64;
         for k in (1..shuffled.len()).rev() {
-            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            s = s
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let j = (s >> 33) as usize % (k + 1);
             shuffled.swap(k, j);
         }
@@ -320,13 +397,28 @@ fn main() -> Result<()> {
     let mut worst_cos = 1.0f64;
     let mut worst_abs = 0.0f64;
     let mut n = 0usize;
-    for (name, order) in [("grouped", &idx), ("reversed", &rev), ("shuffled", &shuffled)] {
+    for (name, order) in [
+        ("grouped", &idx),
+        ("reversed", &rev),
+        ("shuffled", &shuffled),
+    ] {
         let groups = budget_groups(&prompts, order, engine.max_seqs, engine.max_tokens);
-        println!("batch suite {name}: {} groups, sizes {:?}", groups.len(),
-            groups.iter().map(Vec::len).collect::<Vec<_>>());
+        println!(
+            "batch suite {name}: {} groups, sizes {:?}",
+            groups.len(),
+            groups.iter().map(Vec::len).collect::<Vec<_>>()
+        );
         for g in &groups {
-            check_batch(&model, &prompts, g, &single, name,
-                &mut worst_cos, &mut worst_abs, &mut n)?;
+            check_batch(
+                &model,
+                &prompts,
+                g,
+                &single,
+                name,
+                &mut worst_cos,
+                &mut worst_abs,
+                &mut n,
+            )?;
         }
     }
 
@@ -334,7 +426,9 @@ fn main() -> Result<()> {
     let dup = vec![prompts[0].clone(), prompts[0].clone()];
     let outs = model.forward(&dup)?;
     ensure!(outs.len() == 2, "duplicate batch: {} rows", outs.len());
-    for r in &outs { validate_row(r, "duplicate")?; }
+    for r in &outs {
+        validate_row(r, "duplicate")?;
+    }
     let (dup_cos, dup_abs) = compare(&outs[0], &outs[1])?;
     let (ds_cos, ds_abs) = compare(&outs[1], &single[0])?;
     worst_cos = worst_cos.min(dup_cos).min(ds_cos);
@@ -343,14 +437,24 @@ fn main() -> Result<()> {
 
     // Repeated identical-shape execution: regression baseline, tight gate.
     let g0 = budget_groups(&prompts, &idx, engine.max_seqs, engine.max_tokens)
-        .into_iter().next().unwrap();
+        .into_iter()
+        .next()
+        .unwrap();
     let seqs: Vec<_> = g0.iter().map(|&i| prompts[i].clone()).collect();
     let a = model.forward(&seqs)?;
     let b = model.forward(&seqs)?;
-    ensure!(a.len() == g0.len(), "repeat A: {} rows for {} sequences",
-        a.len(), g0.len());
-    ensure!(b.len() == g0.len(), "repeat B: {} rows for {} sequences",
-        b.len(), g0.len());
+    ensure!(
+        a.len() == g0.len(),
+        "repeat A: {} rows for {} sequences",
+        a.len(),
+        g0.len()
+    );
+    ensure!(
+        b.len() == g0.len(),
+        "repeat B: {} rows for {} sequences",
+        b.len(),
+        g0.len()
+    );
     let mut rep_worst_cos = 1.0f64;
     let mut bits_same = true;
     for k in 0..g0.len() {
@@ -375,31 +479,41 @@ fn main() -> Result<()> {
     let bad_long = model.forward(&[vec![5u32; engine.max_len + 1]]).is_err();
     let bad_oov = model.forward(&[vec![131_072u32]]).is_err();
     let neg_ok = bad_batch && bad_empty && bad_pad && bad_long && bad_oov;
-    println!("invalid-inputs: empty_batch={bad_batch} empty_seq={bad_empty} \
+    println!(
+        "invalid-inputs: empty_batch={bad_batch} empty_seq={bad_empty} \
              pad={bad_pad} long={bad_long} oov={bad_oov} -> {}",
-        if neg_ok { "PASS" } else { "FAIL" });
+        if neg_ok { "PASS" } else { "FAIL" }
+    );
     pass &= neg_ok;
 
     // Tokenizer equality vs the reference tokenizer (HF `tokenizers`).
     let tokenizer = tokenizers::Tokenizer::from_file(&args[4])
         .map_err(|e| anyhow::anyhow!("tokenizer load: {e}"))?;
-    let cases: Vec<serde_json::Value> =
-        serde_json::from_slice(&std::fs::read(&args[5])?)?;
+    let cases: Vec<serde_json::Value> = serde_json::from_slice(&std::fs::read(&args[5])?)?;
     let mut tok_ok = true;
     for case in &cases {
         let text = case["text"].as_str().unwrap();
-        let expected: Vec<u32> = case["ids"].as_array().unwrap()
-            .iter().map(|v| v.as_u64().unwrap() as u32).collect();
-        let got: Vec<u32> = tokenizer.encode(text, false)
+        let expected: Vec<u32> = case["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u32)
+            .collect();
+        let got: Vec<u32> = tokenizer
+            .encode(text, false)
             .map_err(|e| anyhow::anyhow!("encode: {e}"))?
-            .get_ids().to_vec();
+            .get_ids()
+            .to_vec();
         if got != expected {
             tok_ok = false;
             println!("tokenizer MISMATCH {text:?}: rust={got:?} ref={expected:?}");
         }
     }
-    println!("tokenizer-equality: {} cases -> {}", cases.len(),
-        if tok_ok { "PASS" } else { "FAIL" });
+    println!(
+        "tokenizer-equality: {} cases -> {}",
+        cases.len(),
+        if tok_ok { "PASS" } else { "FAIL" }
+    );
     pass &= tok_ok;
 
     // Stage-level bidirectionality: changing a later token must change an
@@ -408,30 +522,50 @@ fn main() -> Result<()> {
     let mut altered = base.clone();
     *altered.last_mut().unwrap() = 9990;
     let states = model.forward_states(&[base.clone(), altered])?;
-    ensure!(states.len() == 2, "bidirectionality: {} sequences", states.len());
-    ensure!(states[0].len() == base.len() && states[1].len() == base.len(),
+    ensure!(
+        states.len() == 2,
+        "bidirectionality: {} sequences",
+        states.len()
+    );
+    ensure!(
+        states[0].len() == base.len() && states[1].len() == base.len(),
         "bidirectionality: state lengths {:?} != {}",
-        states.iter().map(Vec::len).collect::<Vec<_>>(), base.len());
+        states.iter().map(Vec::len).collect::<Vec<_>>(),
+        base.len()
+    );
     for (si, seq) in states.iter().enumerate() {
         for (ti, row) in seq.iter().enumerate() {
-            ensure!(row.len() == 2048,
-                "bidirectionality: state {si}/{ti} dim {} != 2048", row.len());
-            ensure!(row.iter().all(|v| v.is_finite()),
-                "bidirectionality: non-finite state {si}/{ti}");
+            ensure!(
+                row.len() == 2048,
+                "bidirectionality: state {si}/{ti} dim {} != 2048",
+                row.len()
+            );
+            ensure!(
+                row.iter().all(|v| v.is_finite()),
+                "bidirectionality: non-finite state {si}/{ti}"
+            );
         }
     }
-    let d0: f64 = states[0][0].iter().zip(&states[1][0])
+    let d0: f64 = states[0][0]
+        .iter()
+        .zip(&states[1][0])
         .map(|(a, b)| (a - b).abs() as f64)
         .fold(0.0f64, f64::max);
-    let dlast: f64 = states[0][base.len() - 1].iter()
+    let dlast: f64 = states[0][base.len() - 1]
+        .iter()
         .zip(&states[1][base.len() - 1])
         .map(|(a, b)| (a - b).abs() as f64)
         .fold(0.0f64, f64::max);
-    ensure!(d0.is_finite() && dlast.is_finite(),
-        "bidirectionality: non-finite difference metric");
+    ensure!(
+        d0.is_finite() && dlast.is_finite(),
+        "bidirectionality: non-finite difference metric"
+    );
     let bidir_ok = d0 > 1e-4 && dlast > 1e-4;
-    println!("bidirectionality: token0_maxdiff={d0:.5} lasttoken_maxdiff={dlast:.5} \
-             -> {}", if bidir_ok { "PASS" } else { "FAIL" });
+    println!(
+        "bidirectionality: token0_maxdiff={d0:.5} lasttoken_maxdiff={dlast:.5} \
+             -> {}",
+        if bidir_ok { "PASS" } else { "FAIL" }
+    );
     pass &= bidir_ok;
 
     if pass {

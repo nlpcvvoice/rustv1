@@ -20,22 +20,31 @@ fn emit_tensor(
     tensor: &Tensor,
 ) -> Result<()> {
     let dtype = format!("{:?}", tensor.dtype());
-    let values = tensor.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?;
-    ensure!(values.iter().all(|x| x.is_finite()), "{name}: nonfinite stage");
+    let values = tensor
+        .to_dtype(DType::F32)?
+        .flatten_all()?
+        .to_vec1::<f32>()?;
+    ensure!(
+        values.iter().all(|x| x.is_finite()),
+        "{name}: nonfinite stage"
+    );
     let bytes: Vec<u8> = values.iter().flat_map(|x| x.to_le_bytes()).collect();
-    serde_json::to_writer(&mut *output, &json!({
-        "kind": "stage",
-        "evidence_class": "observed_execution",
-        "sample_index": sample,
-        "token_sha256": digest,
-        "layer_index": layer,
-        "stage_name": name,
-        "shape": tensor.dims(),
-        "original_dtype": dtype,
-        "encoding": "f32-le-base64",
-        "npy_sha256": format!("{:x}", Sha256::digest(&bytes)),
-        "blob": STANDARD.encode(&bytes)
-    }))?;
+    serde_json::to_writer(
+        &mut *output,
+        &json!({
+            "kind": "stage",
+            "evidence_class": "observed_execution",
+            "sample_index": sample,
+            "token_sha256": digest,
+            "layer_index": layer,
+            "stage_name": name,
+            "shape": tensor.dims(),
+            "original_dtype": dtype,
+            "encoding": "f32-le-base64",
+            "npy_sha256": format!("{:x}", Sha256::digest(&bytes)),
+            "blob": STANDARD.encode(&bytes)
+        }),
+    )?;
     output.write_all(b"\n")?;
     Ok(())
 }
@@ -49,7 +58,8 @@ fn main() -> Result<()> {
     let dir = PathBuf::from(&args[1]);
     let profile: PrecisionProfile = args[2].parse()?;
     ensure!(profile == PrecisionProfile::F, "M2 dump requires F");
-    let samples: Vec<usize> = args[3].split(',')
+    let samples: Vec<usize> = args[3]
+        .split(',')
         .map(str::parse)
         .collect::<std::result::Result<_, _>>()?;
 
@@ -59,45 +69,50 @@ fn main() -> Result<()> {
     let layers: BTreeSet<isize> = if layer_spec == "all" {
         BTreeSet::new()
     } else {
-        layer_spec.split(',').map(str::parse)
+        layer_spec
+            .split(',')
+            .map(str::parse)
             .collect::<std::result::Result<_, _>>()?
     };
 
-    let prompts: Vec<Vec<u32>> =
-        serde_json::from_slice(&std::fs::read("results/prompts.json")?)?;
-    let engine: EngineConfig =
-        serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
-    let audit_identity = std::env::var("RV1_CUDA_MATH_AUDIT")
-        .map_err(|_| anyhow::anyhow!(
-            "RV1_CUDA_MATH_AUDIT must identify the locked-source audit artifact"
-        ))?;
+    let prompts: Vec<Vec<u32>> = serde_json::from_slice(&std::fs::read("results/prompts.json")?)?;
+    let engine: EngineConfig = serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
+    let audit_identity = std::env::var("RV1_CUDA_MATH_AUDIT").map_err(|_| {
+        anyhow::anyhow!("RV1_CUDA_MATH_AUDIT must identify the locked-source audit artifact")
+    })?;
     let math = rustv1::cuda_math::MathModePin::pin(audit_identity)?;
     let device = Device::new_cuda(0)?;
-    let model = Model::load(&dir, device, engine, DType::BF16)?
-        .with_precision(profile);
+    let model = Model::load(&dir, device, engine, DType::BF16)?.with_precision(profile);
 
     let stdout = io::stdout();
     let mut output = io::BufWriter::new(stdout.lock());
 
-    serde_json::to_writer(&mut output, &json!({
-        "kind": "math_policy",
-        "math": math.check()?
-    }))?;
+    serde_json::to_writer(
+        &mut output,
+        &json!({
+            "kind": "math_policy",
+            "math": math.check()?
+        }),
+    )?;
     output.write_all(b"\n")?;
     output.flush()?;
 
     for sample in samples {
-        let ids = prompts.get(sample)
+        let ids = prompts
+            .get(sample)
             .ok_or_else(|| anyhow::anyhow!("sample index out of range"))?;
         let digest = token_digest(ids);
 
-        serde_json::to_writer(&mut output, &json!({
-            "kind": "input",
-            "sample_index": sample,
-            "token_sha256": digest,
-            "length": ids.len(),
-            "token_ids": ids
-        }))?;
+        serde_json::to_writer(
+            &mut output,
+            &json!({
+                "kind": "input",
+                "sample_index": sample,
+                "token_sha256": digest,
+                "length": ids.len(),
+                "token_ids": ids
+            }),
+        )?;
         output.write_all(b"\n")?;
 
         math.check()?;
@@ -116,19 +131,34 @@ fn main() -> Result<()> {
 
         // Exactly the pooling arithmetic of Model::forward, on this execution's
         // states. There is no second decoder invocation.
-        let pooled = states.i(0)?.sum(0)?
+        let pooled = states
+            .i(0)?
+            .sum(0)?
             .affine(1.0 / ids.len() as f64, 0.0)?
             .unsqueeze(0)?;
-        let denominator = pooled.sqr()?.sum_keepdim(1)?.sqrt()?
+        let denominator = pooled
+            .sqr()?
+            .sum_keepdim(1)?
+            .sqrt()?
             .clamp(1e-12, f64::INFINITY)?;
         let embedding = pooled.broadcast_div(&denominator)?;
 
         math.check()?;
         emit_tensor(
-            &mut output, sample, &digest, -1, "pooled.pre_l2", &pooled.i(0)?,
+            &mut output,
+            sample,
+            &digest,
+            -1,
+            "pooled.pre_l2",
+            &pooled.i(0)?,
         )?;
         emit_tensor(
-            &mut output, sample, &digest, -1, "final_embedding", &embedding.i(0)?,
+            &mut output,
+            sample,
+            &digest,
+            -1,
+            "final_embedding",
+            &embedding.i(0)?,
         )?;
         output.flush()?;
     }

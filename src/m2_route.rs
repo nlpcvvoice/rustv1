@@ -20,17 +20,10 @@ pub fn open(
     // Pin before device/model initialization or warmup.
     let math = MathModePin::pin(audit_identity)?;
 
-    let engine: EngineConfig = serde_json::from_slice(
-        &std::fs::read(model_dir.join("engine.json"))?,
-    )?;
+    let engine: EngineConfig =
+        serde_json::from_slice(&std::fs::read(model_dir.join("engine.json"))?)?;
 
     let device = Device::new_cuda(device_ordinal)?;
 
-    IndependentExecutor::load(
-        model_dir,
-        device,
-        engine,
-        math,
-        manifest_path,
-    )
+    IndependentExecutor::load(model_dir, device, engine, math, manifest_path)
 }

@@ -69,66 +69,104 @@ struct Index {
 fn semantic_config_check(raw: &Value) -> Result<()> {
     let obj = raw.as_object().context("config.json must be an object")?;
     const CONSUMED: &[&str] = &[
-        "hidden_size", "intermediate_size", "num_hidden_layers",
-        "num_attention_heads", "num_key_value_heads", "head_dim",
-        "vocab_size", "rms_norm_eps", "hidden_act",
-        "max_position_embeddings", "is_causal", "pooling",
-        "pad_token_id", "rope_theta", "rope_parameters",
-        "rope_scaling", "attention_bias", "mlp_bias",
-        "ada_rms_norm_t_cond", "llama_4_scaling",
+        "hidden_size",
+        "intermediate_size",
+        "num_hidden_layers",
+        "num_attention_heads",
+        "num_key_value_heads",
+        "head_dim",
+        "vocab_size",
+        "rms_norm_eps",
+        "hidden_act",
+        "max_position_embeddings",
+        "is_causal",
+        "pooling",
+        "pad_token_id",
+        "rope_theta",
+        "rope_parameters",
+        "rope_scaling",
+        "attention_bias",
+        "mlp_bias",
+        "ada_rms_norm_t_cond",
+        "llama_4_scaling",
     ];
     for (key, value) in obj {
         if CONSUMED.contains(&key.as_str()) {
             continue;
         }
         match key.as_str() {
-            "sliding_window" => ensure!(value.is_null(),
-                "sliding_window={value} changes attention semantics"),
+            "sliding_window" => ensure!(
+                value.is_null(),
+                "sliding_window={value} changes attention semantics"
+            ),
             "attention_dropout" => ensure!(
                 value.is_null() || value.as_f64() == Some(0.0),
-                "nonzero attention_dropout is unsupported"),
-            "bos_token_id" => ensure!(value.as_u64() == Some(1),
-                "unexpected bos_token_id {value}"),
-            "eos_token_id" => ensure!(value.as_u64() == Some(2),
-                "unexpected eos_token_id {value}"),
-            "dtype" => ensure!(value.as_str() == Some("bfloat16"),
-                "unexpected dtype {value}"),
-            "use_cache" | "tie_word_embeddings" | "initializer_range"
-            | "architectures" | "model_type" | "nemo_version"
+                "nonzero attention_dropout is unsupported"
+            ),
+            "bos_token_id" => ensure!(value.as_u64() == Some(1), "unexpected bos_token_id {value}"),
+            "eos_token_id" => ensure!(value.as_u64() == Some(2), "unexpected eos_token_id {value}"),
+            "dtype" => ensure!(
+                value.as_str() == Some("bfloat16"),
+                "unexpected dtype {value}"
+            ),
+            "use_cache"
+            | "tie_word_embeddings"
+            | "initializer_range"
+            | "architectures"
+            | "model_type"
+            | "nemo_version"
             | "transformers_version" => {}
-            other => bail!("unknown config key '{other}': \
-                            semantic manifest is not closed"),
+            other => bail!(
+                "unknown config key '{other}': \
+                            semantic manifest is not closed"
+            ),
         }
     }
     // Nested semantic objects are classified too: a new nested option
     // must not be silently ignored (ASTRO6 #7).
     for (field, known) in [
-        ("rope_parameters", &[
-            "rope_type", "type", "rope_theta", "factor",
-            "original_max_position_embeddings", "beta_fast", "beta_slow",
-            "apply_yarn_scaling", "attn_factor",
-            "llama_4_scaling_beta", "mscale", "mscale_all_dim"][..],
+        (
+            "rope_parameters",
+            &[
+                "rope_type",
+                "type",
+                "rope_theta",
+                "factor",
+                "original_max_position_embeddings",
+                "beta_fast",
+                "beta_slow",
+                "apply_yarn_scaling",
+                "attn_factor",
+                "llama_4_scaling_beta",
+                "mscale",
+                "mscale_all_dim",
+            ][..],
         ),
-        ("llama_4_scaling", &[
-            "beta", "original_max_position_embeddings"][..],
+        (
+            "llama_4_scaling",
+            &["beta", "original_max_position_embeddings"][..],
         ),
     ] {
         if let Some(v) = obj.get(field) {
             if let Some(inner) = v.as_object() {
                 for (key, value) in inner {
-                    ensure!(known.contains(&key.as_str()),
+                    ensure!(
+                        known.contains(&key.as_str()),
                         "unknown {field}.{key}: nested semantic manifest \
-                         is not closed");
+                         is not closed"
+                    );
                     if field == "rope_parameters" {
                         match key.as_str() {
                             "llama_4_scaling_beta" => ensure!(
                                 value.as_f64() == Some(0.1),
-                                "unexpected rope_parameters.llama_4_scaling_beta {value}"),
+                                "unexpected rope_parameters.llama_4_scaling_beta {value}"
+                            ),
                             // Neutral only while apply_yarn_scaling=false.
                             "mscale" | "mscale_all_dim" => ensure!(
                                 value.as_f64() == Some(1.0),
                                 "non-neutral {field}.{key}={value} while \
-                                 apply_yarn_scaling must be false"),
+                                 apply_yarn_scaling must be false"
+                            ),
                             _ => {}
                         }
                     }
@@ -150,17 +188,20 @@ fn weight_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let index: Index = serde_json::from_slice(&fs::read(index)?)?;
     let names: BTreeSet<_> = index.weight_map.into_values().collect();
 
-    names.into_iter().map(|name| {
-        let p = Path::new(&name);
-        ensure!(
-            p.components().count() == 1
-                && matches!(p.components().next(), Some(Component::Normal(_))),
-            "unsafe shard path: {name}"
-        );
-        let p = dir.join(p);
-        ensure!(p.is_file(), "missing shard: {}", p.display());
-        Ok(p)
-    }).collect()
+    names
+        .into_iter()
+        .map(|name| {
+            let p = Path::new(&name);
+            ensure!(
+                p.components().count() == 1
+                    && matches!(p.components().next(), Some(Component::Normal(_))),
+                "unsafe shard path: {name}"
+            );
+            let p = dir.join(p);
+            ensure!(p.is_file(), "missing shard: {}", p.display());
+            Ok(p)
+        })
+        .collect()
 }
 
 fn theta(c: &Config) -> Result<f64> {
@@ -176,7 +217,9 @@ fn theta(c: &Config) -> Result<f64> {
     {
         if let Some(v) = params.get("rope_theta").filter(|v| !v.is_null()) {
             found += 1;
-            let t = v.as_f64().context("every declared rope_theta must be numeric")?;
+            let t = v
+                .as_f64()
+                .context("every declared rope_theta must be numeric")?;
             ensure!(t == 1_000_000.0, "unexpected nested rope_theta {t}");
         }
     }
@@ -200,11 +243,13 @@ pub struct YarnParams {
 /// discriminators, or "default" are rejected for this loader.
 fn yarn_params(c: &Config) -> Result<YarnParams> {
     ensure!(
-        c.rope_scaling.as_ref().map_or(true, Value::is_null),
+        c.rope_scaling.as_ref().is_none_or(Value::is_null),
         "rope_scaling must be absent for the frozen contract; \
          reconcile it with rope_parameters explicitly"
     );
-    let params = c.rope_parameters.as_ref()
+    let params = c
+        .rope_parameters
+        .as_ref()
         .filter(|p| !p.is_null() && p.is_object())
         .context("frozen contract requires an object rope_parameters")?;
 
@@ -219,7 +264,9 @@ fn yarn_params(c: &Config) -> Result<YarnParams> {
     if let (Some(a), Some(b)) = (kind, alias) {
         ensure!(a == b, "conflicting rope_type/type discriminators");
     }
-    let kind = kind.or(alias).context("rope_parameters missing discriminator")?;
+    let kind = kind
+        .or(alias)
+        .context("rope_parameters missing discriminator")?;
 
     match kind {
         "yarn" => {}
@@ -227,8 +274,7 @@ fn yarn_params(c: &Config) -> Result<YarnParams> {
     }
 
     ensure!(
-        params.get("apply_yarn_scaling")
-            .and_then(Value::as_bool) == Some(false),
+        params.get("apply_yarn_scaling").and_then(Value::as_bool) == Some(false),
         "apply_yarn_scaling=true requires the mscale amplitude path; \
          not present in the frozen contract"
     );
@@ -239,9 +285,7 @@ fn yarn_params(c: &Config) -> Result<YarnParams> {
     ensure!(attn_factor == 1.0, "non-unit attn_factor unsupported");
     let extrapolation_factor = match params.get("extrapolation_factor") {
         None => 1.0,
-        Some(v) => v
-            .as_f64()
-            .context("extrapolation_factor must be numeric")?,
+        Some(v) => v.as_f64().context("extrapolation_factor must be numeric")?,
     };
     ensure!(
         extrapolation_factor == 1.0,
@@ -253,22 +297,25 @@ fn yarn_params(c: &Config) -> Result<YarnParams> {
     };
     ensure!(truncate, "truncate=false unsupported");
     let y = YarnParams {
-        factor: params.get("factor").and_then(Value::as_f64)
+        factor: params
+            .get("factor")
+            .and_then(Value::as_f64)
             .context("yarn missing factor")?,
         original_max: params
             .get("original_max_position_embeddings")
             .and_then(Value::as_f64)
             .context("yarn missing original_max_position_embeddings")?,
-        beta_fast: params.get("beta_fast").and_then(Value::as_f64)
+        beta_fast: params
+            .get("beta_fast")
+            .and_then(Value::as_f64)
             .context("yarn missing beta_fast")?,
-        beta_slow: params.get("beta_slow").and_then(Value::as_f64)
+        beta_slow: params
+            .get("beta_slow")
+            .and_then(Value::as_f64)
             .context("yarn missing beta_slow")?,
     };
     ensure!(
-        y.factor == 16.0
-            && y.original_max == 16_384.0
-            && y.beta_fast == 32.0
-            && y.beta_slow == 1.0,
+        y.factor == 16.0 && y.original_max == 16_384.0 && y.beta_fast == 32.0 && y.beta_slow == 1.0,
         "YaRN parameters differ from the frozen contract \
          (factor=16, original_max=16384, beta_fast=32, beta_slow=1)"
     );
@@ -312,34 +359,50 @@ fn validate_manifest(files: &[PathBuf]) -> Result<()> {
         ensure!(bytes.len() > 8, "truncated safetensors: {}", file.display());
         let n = u64::from_le_bytes(bytes[..8].try_into()?) as usize;
         ensure!(8 + n <= bytes.len(), "truncated header: {}", file.display());
-        let header: BTreeMap<String, Value> =
-            serde_json::from_slice(&bytes[8..8 + n])?;
+        let header: BTreeMap<String, Value> = serde_json::from_slice(&bytes[8..8 + n])?;
 
         for (name, entry) in header {
             if name == "__metadata__" {
                 continue;
             }
-            let shape = entry.get("shape").and_then(Value::as_array)
+            let shape = entry
+                .get("shape")
+                .and_then(Value::as_array)
                 .context("tensor missing shape")?
                 .iter()
                 .map(|v| v.as_u64().map(|v| v as usize))
                 .collect::<Option<Vec<_>>>()
                 .context("malformed shape")?;
-            let dtype = entry.get("dtype").and_then(Value::as_str)
+            let dtype = entry
+                .get("dtype")
+                .and_then(Value::as_str)
                 .context("tensor missing dtype")?
                 .to_string();
-            ensure!(seen.insert(name.clone(), (shape, dtype)).is_none(),
-                "duplicate tensor across shards: {name}");
+            ensure!(
+                seen.insert(name.clone(), (shape, dtype)).is_none(),
+                "duplicate tensor across shards: {name}"
+            );
         }
     }
 
-    ensure!(seen.len() == expected.len(),
-        "manifest size {} != expected {}", seen.len(), expected.len());
+    ensure!(
+        seen.len() == expected.len(),
+        "manifest size {} != expected {}",
+        seen.len(),
+        expected.len()
+    );
     for (name, (shape, dtype)) in &expected {
-        let (got_shape, got_dtype) = seen.get(name)
+        let (got_shape, got_dtype) = seen
+            .get(name)
             .with_context(|| format!("missing tensor {name}"))?;
-        ensure!(got_shape == shape, "shape mismatch {name}: {got_shape:?} != {shape:?}");
-        ensure!(got_dtype == dtype, "dtype mismatch {name}: {got_dtype} != {dtype}");
+        ensure!(
+            got_shape == shape,
+            "shape mismatch {name}: {got_shape:?} != {shape:?}"
+        );
+        ensure!(
+            got_dtype == dtype,
+            "dtype mismatch {name}: {got_dtype} != {dtype}"
+        );
     }
     Ok(())
 }
@@ -352,9 +415,12 @@ fn linear3(l: &Linear, x: &Tensor) -> candle_core::Result<Tensor> {
     y.reshape((b, s, n))
 }
 
-fn no_bias(vb: VarBuilder<'_>, name: &str, out: usize, input: usize)
-    -> candle_core::Result<Linear>
-{
+fn no_bias(
+    vb: VarBuilder<'_>,
+    name: &str,
+    out: usize,
+    input: usize,
+) -> candle_core::Result<Linear> {
     Ok(Linear::new(
         vb.get((out, input), &format!("{name}.weight"))?,
         None,
@@ -386,9 +452,16 @@ pub fn build_rope_tables(
             .map(|j| theta.powf(-((2 * j) as f64) / head_dim as f64))
             .collect(),
         Some(y) => crate::yarn::standard_yarn_inv_freq(
-            head_dim, theta, y.factor, y.original_max,
-            y.beta_fast, y.beta_slow,
-        ).into_iter().map(f64::from).collect(),
+            head_dim,
+            theta,
+            y.factor,
+            y.original_max,
+            y.beta_fast,
+            y.beta_slow,
+        )
+        .into_iter()
+        .map(f64::from)
+        .collect(),
     };
 
     let mut cos = Vec::with_capacity(max_len * half);
@@ -403,8 +476,7 @@ pub fn build_rope_tables(
     (cos, sin)
 }
 
-pub type StageSink<'a> =
-    dyn FnMut(isize, &str, &Tensor) -> Result<()> + 'a;
+pub type StageSink<'a> = dyn FnMut(isize, &str, &Tensor) -> Result<()> + 'a;
 
 fn emit_stage(
     sink: &mut Option<&mut StageSink<'_>>,
@@ -433,55 +505,63 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn load(dir: &Path, device: Device, engine: EngineConfig, dtype: DType)
-        -> Result<Self>
-    {
+    pub fn load(dir: &Path, device: Device, engine: EngineConfig, dtype: DType) -> Result<Self> {
         let config_bytes = fs::read(dir.join("config.json"))?;
         semantic_config_check(&serde_json::from_slice(&config_bytes)?)?;
         let cfg: Config = serde_json::from_slice(&config_bytes)?;
 
         ensure!(
-            (cfg.hidden_size, cfg.num_attention_heads, cfg.head_dim)
-                == (2048, 24, 128),
+            (cfg.hidden_size, cfg.num_attention_heads, cfg.head_dim) == (2048, 24, 128),
             "unexpected head geometry: this checkpoint has head_dim=128 \
              while hidden_size / num_attention_heads = 85.33"
         );
         ensure!(
-            (cfg.num_hidden_layers, cfg.intermediate_size, cfg.vocab_size)
-                == (16, 6144, 131072),
+            (cfg.num_hidden_layers, cfg.intermediate_size, cfg.vocab_size) == (16, 6144, 131072),
             "unexpected model topology"
         );
-        ensure!(cfg.head_dim % 2 == 0, "invalid head_dim");
+        ensure!(cfg.head_dim.is_multiple_of(2), "invalid head_dim");
         ensure!(cfg.num_key_value_heads == 8, "unexpected KV head count");
         ensure!(
-            cfg.num_attention_heads % cfg.num_key_value_heads == 0,
+            cfg.num_attention_heads
+                .is_multiple_of(cfg.num_key_value_heads),
             "invalid GQA geometry"
         );
         ensure!(cfg.rms_norm_eps == 1e-5, "unexpected rms_norm_eps");
         ensure!(cfg.hidden_act == "silu", "only SiLU is implemented");
-        ensure!(!cfg.is_causal, "this executor requires bidirectional attention");
+        ensure!(
+            !cfg.is_causal,
+            "this executor requires bidirectional attention"
+        );
         ensure!(!engine.causal, "engine.causal must be false");
         ensure!(cfg.pooling == "avg", "this executor requires avg pooling");
         ensure!(cfg.pad_token_id == 11, "unexpected padding token");
         ensure!(!cfg.attention_bias && !cfg.mlp_bias, "bias unsupported");
         ensure!(!cfg.ada_rms_norm_t_cond, "adaptive norm unsupported");
         let yarn = yarn_params(&cfg)?;
-        let l4 = cfg.llama_4_scaling.as_ref()
+        let l4 = cfg
+            .llama_4_scaling
+            .as_ref()
             .filter(|v| !v.is_null() && v.is_object())
             .context("frozen contract requires llama_4_scaling")?;
         ensure!(
             l4.get("beta").and_then(Value::as_f64) == Some(0.1)
-                && l4.get("original_max_position_embeddings")
-                    .and_then(Value::as_f64) == Some(16384.0),
+                && l4
+                    .get("original_max_position_embeddings")
+                    .and_then(Value::as_f64)
+                    == Some(16384.0),
             "llama_4_scaling differs from the frozen contract \
              (beta=0.1, original_max=16384)"
         );
         let llama4 = Some((
             l4.get("beta").and_then(Value::as_f64).unwrap(),
             l4.get("original_max_position_embeddings")
-                .and_then(Value::as_f64).unwrap(),
+                .and_then(Value::as_f64)
+                .unwrap(),
         ));
-        ensure!(engine.rope_layout == "split_half", "unsupported RoPE layout");
+        ensure!(
+            engine.rope_layout == "split_half",
+            "unsupported RoPE layout"
+        );
         ensure!(
             engine.max_len > 0 && engine.max_len <= cfg.max_position_embeddings,
             "invalid serving length"
@@ -494,17 +574,11 @@ impl Model {
 
         // SAFETY: model files must remain immutable while the mmap is live.
         // Deploy the model directory read-only.
-        let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(
-                &files, dtype, &device
-            )?
-        };
+        let vb = unsafe { VarBuilder::from_mmaped_safetensors(&files, dtype, &device)? };
         // Frozen checkpoint inventory: tensor names are top-level
         // (embed_tokens.*, layers.N.*, norm.*); there is no "model." prefix.
 
-        let embed = candle_nn::embedding(
-            cfg.vocab_size, cfg.hidden_size, vb.pp("embed_tokens")
-        )?;
+        let embed = candle_nn::embedding(cfg.vocab_size, cfg.hidden_size, vb.pp("embed_tokens"))?;
 
         let q = cfg.num_attention_heads * cfg.head_dim;
         let kv = cfg.num_key_value_heads * cfg.head_dim;
@@ -544,15 +618,21 @@ impl Model {
         let sin = Tensor::from_vec(sin_v, (engine.max_len, half), &device)?;
 
         Ok(Self {
-            device, dtype, cfg, engine, embed, layers, final_norm, cos, sin,
+            device,
+            dtype,
+            cfg,
+            engine,
+            embed,
+            layers,
+            final_norm,
+            cos,
+            sin,
             llama4,
             precision: crate::precision::PrecisionProfile::A,
         })
     }
 
-    pub fn with_precision(
-        mut self, profile: crate::precision::PrecisionProfile
-    ) -> Self {
+    pub fn with_precision(mut self, profile: crate::precision::PrecisionProfile) -> Self {
         self.precision = profile;
         self
     }
@@ -564,22 +644,28 @@ impl Model {
         inputs: &[Tensor],
     ) -> Result<Vec<(String, Tensor)>> {
         use crate::precision::PrecisionProfile;
-    
-        ensure!(self.precision == PrecisionProfile::F, "replay requires profile F");
-        ensure!(self.dtype == DType::BF16, "replay requires BF16 model storage");
+
+        ensure!(
+            self.precision == PrecisionProfile::F,
+            "replay requires profile F"
+        );
+        ensure!(
+            self.dtype == DType::BF16,
+            "replay requires BF16 model storage"
+        );
         ensure!(!inputs.is_empty(), "missing replay input");
-    
+
         let layer = if operator == "final_rms" {
             None
         } else {
             Some(self.layers.get(layer_index).context("layer out of range")?)
         };
-    
+
         let one = || -> Result<&Tensor> {
             ensure!(inputs.len() == 1, "{operator}: expected one input");
             Ok(&inputs[0])
         };
-    
+
         let norm_input = || -> Result<Tensor> {
             ensure!(
                 inputs.len() == 1 || inputs.len() == 2,
@@ -593,7 +679,7 @@ impl Model {
                 Ok(inputs[0].clone())
             }
         };
-    
+
         let result = match operator {
             "input_rms" | "post_attention_rms" | "final_rms" => {
                 let x = norm_input()?;
@@ -602,9 +688,7 @@ impl Model {
                     "post_attention_rms" => &layer.unwrap().norm2,
                     _ => &self.final_norm,
                 };
-                crate::precision::rms(
-                    &x, weight, self.cfg.rms_norm_eps, PrecisionProfile::F,
-                )?
+                crate::precision::rms(&x, weight, self.cfg.rms_norm_eps, PrecisionProfile::F)?
             }
             "qkv" => linear3(&layer.unwrap().qkv, one()?)?,
             "o_proj" => linear3(&layer.unwrap().out, one()?)?,
@@ -628,8 +712,10 @@ impl Model {
                 } else {
                     self.cfg.num_key_value_heads
                 };
-                ensure!(b == 1 && heads == expected_heads && d == self.cfg.head_dim,
-                    "wrong rotary geometry");
+                ensure!(
+                    b == 1 && heads == expected_heads && d == self.cfg.head_dim,
+                    "wrong rotary geometry"
+                );
                 ensure!(s > 0 && s <= self.engine.max_len, "wrong rotary length");
                 // Actual Rust cache and arithmetic, positions 0..S.
                 // This isolates application+cache differences, not application alone.
@@ -642,23 +728,19 @@ impl Model {
                 let v = &inputs[2];
                 let (b, heads, s, d) = q.dims4()?;
                 ensure!(
-                    b == 1 && heads == self.cfg.num_attention_heads
-                        && d == self.cfg.head_dim,
+                    b == 1 && heads == self.cfg.num_attention_heads && d == self.cfg.head_dim,
                     "wrong Q geometry"
                 );
                 ensure!(
-                    k.dims() == [1, self.cfg.num_key_value_heads, s, d]
-                        && v.dims() == k.dims(),
+                    k.dims() == [1, self.cfg.num_key_value_heads, s, d] && v.dims() == k.dims(),
                     "K/V must be captured before GQA repetition"
                 );
                 let k = self.repeat_kv(k)?;
                 let v = self.repeat_kv(v)?;
                 let mask = Tensor::zeros((1, 1, s, s), DType::F32, &self.device)?;
-    
-                let actual = crate::precision::attention(
-                    q, &k, &v, &mask, PrecisionProfile::F,
-                )?;
-    
+
+                let actual = crate::precision::attention(q, &k, &v, &mask, PrecisionProfile::F)?;
+
                 // F with F32 operands preserves F32 context rather than casting it
                 // to BF16. This is a dense diagnostic reconstruction, not FlashAttention.
                 let oracle = crate::precision::attention(
@@ -668,12 +750,11 @@ impl Model {
                     &mask,
                     PrecisionProfile::F,
                 )?;
-    
+
                 let flatten = |x: Tensor| -> candle_core::Result<Tensor> {
-                    x.transpose(1, 2)?.contiguous()?
-                        .reshape((1, s, heads * d))
+                    x.transpose(1, 2)?.contiguous()?.reshape((1, s, heads * d))
                 };
-    
+
                 return Ok(vec![
                     ("profile_F".to_owned(), flatten(actual)?),
                     ("dense_fp32_oracle".to_owned(), flatten(oracle)?),
@@ -681,7 +762,7 @@ impl Model {
             }
             other => bail!("unsupported replay operator {other}"),
         };
-    
+
         Ok(vec![("profile_F".to_owned(), result)])
     }
 
@@ -744,7 +825,7 @@ impl Model {
         ensure!(s > 0 && s <= self.engine.max_len, "invalid sequence width");
         ensure!(sequences.iter().all(|x| !x.is_empty()), "empty sequence");
         ensure!(sequences.iter().all(|x| x.len() <= s), "padded_s too small");
-    
+
         let mut ids = vec![self.cfg.pad_token_id; b * s];
         for (row, seq) in sequences.iter().enumerate() {
             ensure!(
@@ -757,11 +838,11 @@ impl Model {
             );
             ids[row * s..row * s + seq.len()].copy_from_slice(seq);
         }
-    
+
         let ids = Tensor::from_vec(ids, (b, s), &self.device)?;
         let mut x = self.embed.forward(&ids)?;
         emit_stage(&mut dump, -1, "embed_tokens", &x)?;
-    
+
         let mut mask = vec![0f32; b * s * s];
         for (row, seq) in sequences.iter().enumerate() {
             for query in 0..s {
@@ -771,20 +852,20 @@ impl Model {
             }
         }
         let mask = Tensor::from_vec(mask, (b, 1, s, s), &self.device)?;
-    
+
         let nq = self.cfg.num_attention_heads;
         let nkv = self.cfg.num_key_value_heads;
         let d = self.cfg.head_dim;
         let q_width = nq * d;
         let kv_width = nkv * d;
-    
+
         // These are the actual operands of the previous layer's residual add.
         let mut previous_branch: Option<Tensor> = None;
         let mut previous_residual: Option<Tensor> = None;
-    
+
         for (li, layer) in self.layers.iter().enumerate() {
             let li = li as isize;
-    
+
             match (&previous_branch, &previous_residual) {
                 (Some(branch), Some(residual)) => {
                     emit_stage(&mut dump, li, "input_layernorm.hidden_in", branch)?;
@@ -795,31 +876,32 @@ impl Model {
                 }
                 _ => bail!("inconsistent residual observation state"),
             }
-    
-            let n = crate::precision::rms(
-                &x, &layer.norm1, self.cfg.rms_norm_eps, self.precision,
-            )?;
+
+            let n = crate::precision::rms(&x, &layer.norm1, self.cfg.rms_norm_eps, self.precision)?;
             emit_stage(&mut dump, li, "input_layernorm.normalized", &n)?;
             emit_stage(&mut dump, li, "input_layernorm.residual", &x)?;
-    
+
             let qkv = linear3(&layer.qkv, &n)?;
             emit_stage(&mut dump, li, "qkv.pre_rope", &qkv)?;
-    
+
             // All three views derive from the same immutable pre-rotation tensor.
-            let q = qkv.narrow(2, 0, q_width)?
+            let q = qkv
+                .narrow(2, 0, q_width)?
                 .reshape((b, s, nq, d))?
                 .transpose(1, 2)?;
-            let k = qkv.narrow(2, q_width, kv_width)?
+            let k = qkv
+                .narrow(2, q_width, kv_width)?
                 .reshape((b, s, nkv, d))?
                 .transpose(1, 2)?;
-            let v = qkv.narrow(2, q_width + kv_width, kv_width)?
+            let v = qkv
+                .narrow(2, q_width + kv_width, kv_width)?
                 .reshape((b, s, nkv, d))?
                 .transpose(1, 2)?;
-    
+
             emit_stage(&mut dump, li, "q.pre_rope", &q)?;
             emit_stage(&mut dump, li, "k.pre_rope", &k)?;
             emit_stage(&mut dump, li, "v.pre_rope", &v)?;
-    
+
             if dump.is_some() {
                 let positions = Tensor::from_vec(
                     (0..s).map(|p| p as u32).collect::<Vec<_>>(),
@@ -832,18 +914,16 @@ impl Model {
                 emit_stage(&mut dump, li, "positions", &positions)?;
                 emit_stage(&mut dump, li, "rope.cos_sin_cache", &cache)?;
             }
-    
+
             let q = self.rope(&q, s)?.contiguous()?;
             let k = self.rope(&k, s)?;
             emit_stage(&mut dump, li, "q.post_rope", &q)?;
             emit_stage(&mut dump, li, "k.post_rope", &k)?;
-    
+
             let q = match self.llama4 {
                 Some((beta, original_max)) => {
                     let scales: Vec<f32> = (0..s)
-                        .map(|p| {
-                            crate::yarn::llama4_attn_scale(beta, original_max, p) as f32
-                        })
+                        .map(|p| crate::yarn::llama4_attn_scale(beta, original_max, p) as f32)
                         .collect();
                     let scale = Tensor::from_vec(scales, (1, 1, s, 1), &self.device)?;
                     q.to_dtype(DType::F32)?
@@ -852,68 +932,68 @@ impl Model {
                 }
                 None => q,
             };
-    
+
             emit_stage(&mut dump, li, "q.attention_input", &q)?;
             emit_stage(&mut dump, li, "k.attention_input", &k)?;
             emit_stage(&mut dump, li, "v.attention_input", &v)?;
-    
+
             let k = self.repeat_kv(&k)?;
             let v = self.repeat_kv(&v)?;
-            let context = crate::precision::attention(
-                &q, &k, &v, &mask, self.precision,
-            )?;
-            let attention = context.transpose(1, 2)?
+            let context = crate::precision::attention(&q, &k, &v, &mask, self.precision)?;
+            let attention = context
+                .transpose(1, 2)?
                 .contiguous()?
                 .reshape((b, s, q_width))?;
-    
+
             // One canonical alias only. No attention.output duplicate.
             emit_stage(&mut dump, li, "attention.pre_o_proj", &attention)?;
             let o = linear3(&layer.out, &attention)?;
             emit_stage(&mut dump, li, "o_proj", &o)?;
-    
+
             emit_stage(&mut dump, li, "post_attention_layernorm.hidden_in", &o)?;
             emit_stage(&mut dump, li, "post_attention_layernorm.residual_in", &x)?;
             x = (&x + &o)?;
             emit_stage(&mut dump, li, "residual.post_attention", &x)?;
-    
-            let n = crate::precision::rms(
-                &x, &layer.norm2, self.cfg.rms_norm_eps, self.precision,
-            )?;
+
+            let n = crate::precision::rms(&x, &layer.norm2, self.cfg.rms_norm_eps, self.precision)?;
             emit_stage(&mut dump, li, "post_attention_layernorm.normalized", &n)?;
             emit_stage(&mut dump, li, "post_attention_layernorm.residual", &x)?;
-    
+
             let gu = linear3(&layer.gate_up, &n)?;
             emit_stage(&mut dump, li, "mlp.gate_up", &gu)?;
             let gate = gu.narrow(2, 0, self.cfg.intermediate_size)?;
-            let up = gu.narrow(
-                2, self.cfg.intermediate_size, self.cfg.intermediate_size,
-            )?;
+            let up = gu.narrow(2, self.cfg.intermediate_size, self.cfg.intermediate_size)?;
             let mlp = crate::precision::silu_mul(&gate, &up, self.precision)?;
             emit_stage(&mut dump, li, "mlp.silu_mul", &mlp)?;
             let down = linear3(&layer.down, &mlp)?;
             emit_stage(&mut dump, li, "mlp.down", &down)?;
-    
+
             previous_residual = Some(x.clone());
             previous_branch = Some(down.clone());
             x = (&x + &down)?;
             emit_stage(&mut dump, li, "residual.post_down", &x)?;
         }
-    
+
         emit_stage(
-            &mut dump, -1, "norm.hidden_in",
+            &mut dump,
+            -1,
+            "norm.hidden_in",
             previous_branch.as_ref().context("missing final branch")?,
         )?;
         emit_stage(
-            &mut dump, -1, "norm.residual_in",
-            previous_residual.as_ref().context("missing final residual")?,
+            &mut dump,
+            -1,
+            "norm.residual_in",
+            previous_residual
+                .as_ref()
+                .context("missing final residual")?,
         )?;
-    
-        let normalized = crate::precision::rms(
-            &x, &self.final_norm, self.cfg.rms_norm_eps, self.precision,
-        )?;
+
+        let normalized =
+            crate::precision::rms(&x, &self.final_norm, self.cfg.rms_norm_eps, self.precision)?;
         emit_stage(&mut dump, -1, "norm.residual", &x)?;
         emit_stage(&mut dump, -1, "norm.normalized", &normalized)?;
-    
+
         let states = normalized.to_dtype(DType::F32)?;
         emit_stage(&mut dump, -1, "final_norm", &states)?;
         Ok(states)
@@ -921,13 +1001,13 @@ impl Model {
 
     pub fn forward(&self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
         let pooled = self.pooled_mean(sequences)?;
-        let norm = pooled.sqr()?
+        let norm = pooled
+            .sqr()?
             .sum_keepdim(1)?
             .sqrt()?
             .clamp(1e-12, f64::INFINITY)?;
         Ok(pooled.broadcast_div(&norm)?.to_vec2::<f32>()?)
     }
-
 
     /// Diagnostic: mean over valid token states after the final RMSNorm,
     /// before L2 normalization. Shape (b, hidden), FP32.
@@ -936,9 +1016,7 @@ impl Model {
         let mut rows = Vec::with_capacity(sequences.len());
         for (row, seq) in sequences.iter().enumerate() {
             let valid = x.i(row)?.narrow(0, 0, seq.len())?;
-            let mean = valid
-                .sum(0)?
-                .affine(1.0 / seq.len() as f64, 0.0)?;
+            let mean = valid.sum(0)?.affine(1.0 / seq.len() as f64, 0.0)?;
             rows.push(mean.unsqueeze(0)?);
         }
         Ok(Tensor::cat(&rows, 0)?)
@@ -946,20 +1024,21 @@ impl Model {
 
     /// Diagnostic entry (ASTRO6 #9): explicit padded width; masking and
     /// pooling still use the original valid lengths.
-    pub fn forward_with_padded_s(&self, sequences: &[Vec<u32>],
-        padded_s: usize) -> Result<Vec<Vec<f32>>>
-    {
+    pub fn forward_with_padded_s(
+        &self,
+        sequences: &[Vec<u32>],
+        padded_s: usize,
+    ) -> Result<Vec<Vec<f32>>> {
         let x = self.run_decoder_padded(sequences, padded_s, None)?;
         let mut rows = Vec::with_capacity(sequences.len());
         for (row, seq) in sequences.iter().enumerate() {
             let valid = x.i(row)?.narrow(0, 0, seq.len())?;
-            let mean = valid
-                .sum(0)?
-                .affine(1.0 / seq.len() as f64, 0.0)?;
+            let mean = valid.sum(0)?.affine(1.0 / seq.len() as f64, 0.0)?;
             rows.push(mean.unsqueeze(0)?);
         }
         let pooled = Tensor::cat(&rows, 0)?;
-        let norm = pooled.sqr()?
+        let norm = pooled
+            .sqr()?
             .sum_keepdim(1)?
             .sqrt()?
             .clamp(1e-12, f64::INFINITY)?;
@@ -968,9 +1047,11 @@ impl Model {
 
     /// Observed-shape wrapper for batch forensics: reports the padded
     /// geometry actually executed and the projection row count.
-    pub fn forward_observed(&self, sequences: &[Vec<u32>],
-        padded_s: usize) -> Result<crate::precision::ObservedRun>
-    {
+    pub fn forward_observed(
+        &self,
+        sequences: &[Vec<u32>],
+        padded_s: usize,
+    ) -> Result<crate::precision::ObservedRun> {
         let embeddings = self.forward_with_padded_s(sequences, padded_s)?;
         Ok(crate::precision::ObservedRun {
             padded_b: sequences.len(),
@@ -987,11 +1068,7 @@ impl Model {
         let x = self.run_decoder(sequences)?;
         let mut out = Vec::with_capacity(sequences.len());
         for (row, seq) in sequences.iter().enumerate() {
-            out.push(
-                x.i(row)?
-                    .narrow(0, 0, seq.len())?
-                    .to_vec2::<f32>()?,
-            );
+            out.push(x.i(row)?.narrow(0, 0, seq.len())?.to_vec2::<f32>()?);
         }
         Ok(out)
     }
@@ -1029,10 +1106,7 @@ impl IndependentExecutor {
         ensure!(matches!(&device, Device::Cuda(_)), "CUDA required");
         ensure!(engine.max_seqs > 0, "invalid max_seqs");
         ensure!(engine.max_len > 0, "invalid max_len");
-        ensure!(
-            engine.max_tokens >= engine.max_len,
-            "one sequence must fit"
-        );
+        ensure!(engine.max_tokens >= engine.max_len, "one sequence must fit");
         math.check()?;
 
         let model = Model::load(dir, device, engine, DType::BF16)?
@@ -1043,19 +1117,22 @@ impl IndependentExecutor {
             .create_new(true)
             .open(manifest_path)?;
 
-        serde_json::to_writer(&mut manifest, &serde_json::json!({
-            "kind": "executor_start",
-            "execution_policy": "independent_sequence_v1",
-            "serving_route_scope": "in_process_token_ID_API",
-            "http_certified": false,
-            "profile": "F",
-            "weights_and_projections": "BF16",
-            "norm_activation_attention": "widened_as_defined_by_F",
-            "physical_B": 1,
-            "physical_S": "valid_token_count",
-            "stream_policy": "single_owner_no_overlap",
-            "math": math.check()?
-        }))?;
+        serde_json::to_writer(
+            &mut manifest,
+            &serde_json::json!({
+                "kind": "executor_start",
+                "execution_policy": "independent_sequence_v1",
+                "serving_route_scope": "in_process_token_ID_API",
+                "http_certified": false,
+                "profile": "F",
+                "weights_and_projections": "BF16",
+                "norm_activation_attention": "widened_as_defined_by_F",
+                "physical_B": 1,
+                "physical_S": "valid_token_count",
+                "stream_policy": "single_owner_no_overlap",
+                "math": math.check()?
+            }),
+        )?;
         manifest.write_all(b"\n")?;
         manifest.flush()?;
         manifest.sync_data()?;
@@ -1084,28 +1161,20 @@ impl IndependentExecutor {
         Ok(())
     }
 
-    pub fn forward_serving(
-        &mut self,
-        sequences: &[Vec<u32>],
-    ) -> Result<Vec<Vec<f32>>> {
-        ensure!(
-            !self.poisoned,
-            "executor is poisoned; restart the process"
-        );
+    pub fn forward_serving(&mut self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+        ensure!(!self.poisoned, "executor is poisoned; restart the process");
         ensure!(!sequences.is_empty(), "empty request");
 
         // Reject the entire invalid logical request before launching anything.
         // Logical input count is not a physical GPU batch count.
         for sequence in sequences {
             ensure!(
-                !sequence.is_empty()
-                    && sequence.len() <= self.model.engine.max_len,
+                !sequence.is_empty() && sequence.len() <= self.model.engine.max_len,
                 "invalid sequence length"
             );
             ensure!(
                 sequence.iter().all(|&id| {
-                    id != self.model.cfg.pad_token_id
-                        && (id as usize) < self.model.cfg.vocab_size
+                    id != self.model.cfg.pad_token_id && (id as usize) < self.model.cfg.vocab_size
                 }),
                 "padding or out-of-vocabulary token"
             );
@@ -1122,16 +1191,14 @@ impl IndependentExecutor {
         result
     }
 
-    fn forward_validated(
-        &mut self,
-        sequences: &[Vec<u32>],
-    ) -> Result<Vec<Vec<f32>>> {
+    fn forward_validated(&mut self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
         let mut rows = Vec::with_capacity(sequences.len());
 
         for (request_row, sequence) in sequences.iter().enumerate() {
             let math = self.math.check()?;
             let forward_id = self.next_forward;
-            self.next_forward = self.next_forward
+            self.next_forward = self
+                .next_forward
                 .checked_add(1)
                 .context("forward counter overflow")?;
 
@@ -1150,20 +1217,18 @@ impl IndependentExecutor {
             }))?;
 
             let result = (|| -> Result<Vec<f32>> {
-                let output = self.model.forward(
-                    std::slice::from_ref(sequence),
-                )?;
+                let output = self.model.forward(std::slice::from_ref(sequence))?;
                 ensure!(output.len() == 1, "physical forward cardinality");
 
-                let row = output.into_iter().next()
+                let row = output
+                    .into_iter()
+                    .next()
                     .context("missing physical forward output")?;
                 ensure!(row.len() == 2048, "embedding width");
-                ensure!(
-                    row.iter().all(|x| x.is_finite()),
-                    "nonfinite embedding"
-                );
+                ensure!(row.iter().all(|x| x.is_finite()), "nonfinite embedding");
 
-                let norm = row.iter()
+                let norm = row
+                    .iter()
                     .map(|&x| f64::from(x).powi(2))
                     .sum::<f64>()
                     .sqrt();
@@ -1199,9 +1264,7 @@ impl IndependentExecutor {
             };
 
             use sha2::{Digest, Sha256};
-            let bytes: Vec<u8> = row.iter()
-                .flat_map(|x| x.to_le_bytes())
-                .collect();
+            let bytes: Vec<u8> = row.iter().flat_map(|x| x.to_le_bytes()).collect();
 
             let math = self.math.check()?;
             self.record(&serde_json::json!({
@@ -1250,27 +1313,31 @@ mod guard_tests {
     #[test]
     fn unknown_config_key_rejected() {
         // Genuinely unknown top-level key (not a recognized switch).
-        let raw: Value = serde_json::from_str(&format!(
-            "{{{BASE},\"mystery_switch\":true}}")).unwrap();
+        let raw: Value =
+            serde_json::from_str(&format!("{{{BASE},\"mystery_switch\":true}}")).unwrap();
         assert!(semantic_config_check(&raw).is_err());
         // Recognized switch with an unsupported value.
-        let raw: Value = serde_json::from_str(&format!(
-            "{{{BASE},\"sliding_window\":4096}}")).unwrap();
+        let raw: Value =
+            serde_json::from_str(&format!("{{{BASE},\"sliding_window\":4096}}")).unwrap();
         assert!(semantic_config_check(&raw).is_err());
         // Unknown nested key inside rope_parameters.
-        let raw: Value = serde_json::from_str(&format!(
-            "{{{BASE},{YARN},\"mystery_nested\":1}}")).unwrap();
+        let raw: Value =
+            serde_json::from_str(&format!("{{{BASE},{YARN},\"mystery_nested\":1}}")).unwrap();
         assert!(semantic_config_check(&raw).is_err());
         let raw: Value = serde_json::from_str(&format!(
             "{{{BASE},\"rope_parameters\":{{\"rope_type\":\"yarn\",\
              \"rope_theta\":1000000.0,\"factor\":16.0,\
              \"original_max_position_embeddings\":16384,\"beta_fast\":32.0,\
              \"beta_slow\":1.0,\"apply_yarn_scaling\":false,\
-             \"mystery_inner\":true}}}}")).unwrap();
+             \"mystery_inner\":true}}}}"
+        ))
+        .unwrap();
         assert!(semantic_config_check(&raw).is_err());
         // Fully valid frozen-contract configuration.
         let raw: Value = serde_json::from_str(&format!(
-            "{{{BASE},{YARN},\"sliding_window\":null,\"model_type\":\"ministral3\"}}")).unwrap();
+            "{{{BASE},{YARN},\"sliding_window\":null,\"model_type\":\"ministral3\"}}"
+        ))
+        .unwrap();
         assert!(semantic_config_check(&raw).is_ok());
     }
 
@@ -1286,14 +1353,16 @@ mod guard_tests {
             r#""rope_parameters":{"rope_type":123,"type":"yarn","factor":16.0,
                "original_max_position_embeddings":16384,"beta_fast":32.0,
                "beta_slow":1.0,"apply_yarn_scaling":false}"#
-        )).is_err());
+        ))
+        .is_err());
     }
 
     #[test]
     fn default_rope_type_rejected_for_frozen_contract() {
         assert!(yarn_params(&cfg(
             r#""rope_parameters":{"rope_type":"default","rope_theta":1000000.0}"#
-        )).is_err());
+        ))
+        .is_err());
     }
 
     #[test]
@@ -1303,7 +1372,8 @@ mod guard_tests {
                "factor":16.0,"original_max_position_embeddings":16384,
                "beta_fast":32.0,"beta_slow":1.0,"apply_yarn_scaling":false,
                "attn_factor":"x"}"#
-        )).is_err());
+        ))
+        .is_err());
     }
 
     #[test]
@@ -1314,7 +1384,8 @@ mod guard_tests {
             r#""rope_parameters":{"rope_type":"yarn","rope_theta":500000.0,
                "factor":16.0,"original_max_position_embeddings":16384,
                "beta_fast":32.0,"beta_slow":1.0,"apply_yarn_scaling":false}"#
-        )).is_err());
+        ))
+        .is_err());
     }
 
     #[test]

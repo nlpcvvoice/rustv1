@@ -20,7 +20,11 @@ async fn call(client: &HttpClient, uri: &Uri, body: Bytes) -> Result<()> {
     let response = client.request(request).await?;
     let status = response.status();
     let body = response.into_body().collect().await?.to_bytes();
-    ensure!(status.is_success(), "HTTP {status}: {}", String::from_utf8_lossy(&body));
+    ensure!(
+        status.is_success(),
+        "HTTP {status}: {}",
+        String::from_utf8_lossy(&body)
+    );
 
     let response: serde_json::Value = serde_json::from_slice(&body)?;
     ensure!(
@@ -34,21 +38,35 @@ async fn call(client: &HttpClient, uri: &Uri, body: Bytes) -> Result<()> {
 async fn main() -> Result<()> {
     // bench URL corpus.json concurrency iterations-per-worker
     let args: Vec<_> = std::env::args().collect();
-    ensure!(args.len() == 5, "bench URL corpus.json concurrency iterations");
+    ensure!(
+        args.len() == 5,
+        "bench URL corpus.json concurrency iterations"
+    );
 
     let uri: Uri = args[1].parse()?;
     let texts: Vec<String> = serde_json::from_slice(&std::fs::read(&args[2])?)?;
     let concurrency: usize = args[3].parse()?;
     let iterations: usize = args[4].parse()?;
-    ensure!(!texts.is_empty() && concurrency > 0 && iterations > 0, "invalid args");
+    ensure!(
+        !texts.is_empty() && concurrency > 0 && iterations > 0,
+        "invalid args"
+    );
 
-    let bodies: Arc<Vec<Bytes>> = Arc::new(texts.into_iter().map(|text| {
-        Bytes::from(serde_json::to_vec(&json!({
-            "model": "nvidia/Nemotron-3-Embed-1B",
-            "input": text,
-            "encoding_format": "float"
-        })).unwrap())
-    }).collect());
+    let bodies: Arc<Vec<Bytes>> = Arc::new(
+        texts
+            .into_iter()
+            .map(|text| {
+                Bytes::from(
+                    serde_json::to_vec(&json!({
+                        "model": "nvidia/Nemotron-3-Embed-1B",
+                        "input": text,
+                        "encoding_format": "float"
+                    }))
+                    .unwrap(),
+                )
+            })
+            .collect(),
+    );
 
     let client: HttpClient = Client::builder(TokioExecutor::new()).build_http();
     let barrier = Arc::new(Barrier::new(concurrency + 1));

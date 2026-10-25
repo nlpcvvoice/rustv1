@@ -28,12 +28,20 @@ fn main() {
     }
 
     let mut bytes = Vec::new();
-    for v in inv.iter().chain(cos.iter()).chain(sin.iter()).chain(scales.iter()) {
+    for v in inv
+        .iter()
+        .chain(cos.iter())
+        .chain(sin.iter())
+        .chain(scales.iter())
+    {
         bytes.extend_from_slice(&v.to_le_bytes());
     }
     std::fs::write(out, &bytes).expect("write");
     eprintln!(
         "inv={} cos={} sin={} scales={}",
-        inv.len(), cos.len(), sin.len(), scales.len()
+        inv.len(),
+        cos.len(),
+        sin.len(),
+        scales.len()
     );
 }

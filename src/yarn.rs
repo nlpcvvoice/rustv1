@@ -17,18 +17,13 @@ pub fn standard_yarn_inv_freq(
     beta_slow: f64,
 ) -> Vec<f32> {
     let correction_dim = |rotations: f64| {
-        dim as f64
-            * (original_context / (rotations * 2.0 * std::f64::consts::PI)).ln()
+        dim as f64 * (original_context / (rotations * 2.0 * std::f64::consts::PI)).ln()
             / (2.0 * theta.ln())
     };
 
     let low = correction_dim(beta_fast).floor().max(0.0);
     let high = correction_dim(beta_slow).ceil().min((dim - 1) as f64);
-    let denominator = if low == high {
-        0.001
-    } else {
-        high - low
-    };
+    let denominator = if low == high { 0.001 } else { high - low };
 
     (0..dim / 2)
         .map(|j| {
@@ -59,9 +54,9 @@ mod yarn_tests {
         assert_eq!(inv.len(), 64);
 
         // The standard correction boundaries are floor(...)=20, ceil(...)=37.
-        for j in 0..64 {
+        for (j, &v) in inv.iter().enumerate() {
             let plain = 1_000_000_f64.powf(-((2 * j) as f64) / 128.0);
-            let ratio = inv[j] as f64 / plain;
+            let ratio = v as f64 / plain;
 
             if j <= 20 {
                 assert!((ratio - 1.0).abs() < 1e-6);
@@ -83,16 +78,16 @@ mod yarn_tests {
         // Exact values at and beyond the boundary.
         assert_eq!(llama4_attn_scale(beta, original_max, 16_383), 1.0);
         assert!(
-            (llama4_attn_scale(beta, original_max, 16_384)
-                - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12
+            (llama4_attn_scale(beta, original_max, 16_384) - (1.0 + 0.1 * 2.0f64.ln())).abs()
+                < 1e-12
         );
         assert!(
-            (llama4_attn_scale(beta, original_max, 32_767)
-                - (1.0 + 0.1 * 2.0f64.ln())).abs() < 1e-12
+            (llama4_attn_scale(beta, original_max, 32_767) - (1.0 + 0.1 * 2.0f64.ln())).abs()
+                < 1e-12
         );
         assert!(
-            (llama4_attn_scale(beta, original_max, 32_768)
-                - (1.0 + 0.1 * 3.0f64.ln())).abs() < 1e-12
+            (llama4_attn_scale(beta, original_max, 32_768) - (1.0 + 0.1 * 3.0f64.ln())).abs()
+                < 1e-12
         );
     }
 }

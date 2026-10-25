@@ -1,6 +1,5 @@
 use anyhow::{ensure, Context, Result};
 use rustv1::m2_route;
-use serde_json::Value;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -16,9 +15,15 @@ const TIMED_RUNS: usize = 3;
 fn load_prompts(path: &Path) -> Result<Vec<Vec<u32>>> {
     let bytes = fs::read(path)?;
     let prompts: Vec<Vec<u32>> = serde_json::from_slice(&bytes)?;
-    ensure!(prompts.len() == 22, "corpus must contain exactly 22 samples");
+    ensure!(
+        prompts.len() == 22,
+        "corpus must contain exactly 22 samples"
+    );
     for (i, p) in prompts.iter().enumerate() {
-        ensure!(!p.is_empty() && p.len() <= 1024, "sample {i} invalid length");
+        ensure!(
+            !p.is_empty() && p.len() <= 1024,
+            "sample {i} invalid length"
+        );
     }
     Ok(prompts)
 }
@@ -43,7 +48,7 @@ fn main() -> Result<()> {
     let audit_identity = args[4].clone();
 
     let prompts = load_prompts(&prompts_path)?;
-    let total_corpus_tokens: usize = prompts.iter().map(Vec::len).sum();
+    let _total_corpus_tokens: usize = prompts.iter().map(Vec::len).sum();
 
     println!("initializing designated M2 executor...");
     let manifest_path = manifest_dir.join("m2_benchmark_manifest.jsonl");
@@ -99,7 +104,8 @@ fn main() -> Result<()> {
         println!("wall time:         {total_wall_secs:.3} s");
         println!("throughput:        {samples_per_sec:.2} samples/sec");
         println!("tokens/sec:        {tokens_per_sec:.2} tokens/sec");
-        println!("latencies (ms):    p50={:.2}  p95={:.2}  p99={:.2}",
+        println!(
+            "latencies (ms):    p50={:.2}  p95={:.2}  p99={:.2}",
             percentile(&sample_latencies_ms, 0.50),
             percentile(&sample_latencies_ms, 0.95),
             percentile(&sample_latencies_ms, 0.99),
@@ -107,7 +113,12 @@ fn main() -> Result<()> {
         println!("per-length breakdown (p50 ms):");
         for (len, mut times) in length_latencies {
             times.sort_by(f64::total_cmp);
-            println!("  L={:<4} (count={}): p50={:.2} ms", len, times.len(), percentile(&times, 0.50));
+            println!(
+                "  L={:<4} (count={}): p50={:.2} ms",
+                len,
+                times.len(),
+                percentile(&times, 0.50)
+            );
         }
     }
 

@@ -47,9 +47,12 @@ struct Request {
 type ApiError = (StatusCode, Json<Value>);
 
 fn error(status: StatusCode, message: impl Into<String>) -> ApiError {
-    (status, Json(json!({
-        "error": { "message": message.into() }
-    })))
+    (
+        status,
+        Json(json!({
+            "error": { "message": message.into() }
+        })),
+    )
 }
 
 async fn embeddings(
@@ -60,10 +63,16 @@ async fn embeddings(
         return Err(error(StatusCode::BAD_REQUEST, "unknown model"));
     }
     if request.dimensions.is_some_and(|d| d != 2048) {
-        return Err(error(StatusCode::BAD_REQUEST, "only dimensions=2048 supported"));
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "only dimensions=2048 supported",
+        ));
     }
     if request.encoding_format.as_deref().unwrap_or("float") != "float" {
-        return Err(error(StatusCode::BAD_REQUEST, "only float encoding supported"));
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "only float encoding supported",
+        ));
     }
 
     let texts = match request.input {
@@ -75,7 +84,10 @@ async fn embeddings(
     }
 
     // Reject rather than building an unbounded tokenization wait queue.
-    let permit = app.tokenize_slots.clone().try_acquire_owned()
+    let permit = app
+        .tokenize_slots
+        .clone()
+        .try_acquire_owned()
         .map_err(|_| error(StatusCode::TOO_MANY_REQUESTS, "tokenizer overloaded"))?;
 
     let tokenizer = app.tokenizer.clone();
@@ -87,8 +99,7 @@ async fn embeddings(
         for text in texts {
             // Clients supply query:/passage: prefixes.
             // add_special_tokens=true must match the reference configuration.
-            let encoding = tokenizer.encode(text, true)
-                .map_err(|e| e.to_string())?;
+            let encoding = tokenizer.encode(text, true).map_err(|e| e.to_string())?;
             let ids = encoding.get_ids().to_vec();
 
             if ids.is_empty() || ids.len() > max_len {
@@ -96,35 +107,40 @@ async fn embeddings(
             }
             if ids.contains(&PAD_TOKEN_ID) {
                 return Err(
-                    "literal <pad> tokens are not accepted; padding is server-owned"
-                        .to_owned()
+                    "literal <pad> tokens are not accepted; padding is server-owned".to_owned(),
                 );
             }
             result.push(ids);
         }
         Ok(result)
-    }).await
-        .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
+    })
+    .await
+    .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| error(StatusCode::BAD_REQUEST, e))?;
 
     let prompt_tokens: usize = sequences.iter().map(Vec::len).sum();
     let mut pending = Vec::with_capacity(sequences.len());
 
     for ids in sequences {
         let (reply, recv) = oneshot::channel();
-        app.queue.try_send(Job { ids, reply }).map_err(|e| match e {
-            std::sync::mpsc::TrySendError::Full(_) =>
-                error(StatusCode::TOO_MANY_REQUESTS, "GPU queue full"),
-            std::sync::mpsc::TrySendError::Disconnected(_) =>
-                error(StatusCode::SERVICE_UNAVAILABLE, "GPU worker unavailable"),
-        })?;
+        app.queue
+            .try_send(Job { ids, reply })
+            .map_err(|e| match e {
+                std::sync::mpsc::TrySendError::Full(_) => {
+                    error(StatusCode::TOO_MANY_REQUESTS, "GPU queue full")
+                }
+                std::sync::mpsc::TrySendError::Disconnected(_) => {
+                    error(StatusCode::SERVICE_UNAVAILABLE, "GPU worker unavailable")
+                }
+            })?;
         pending.push(recv);
     }
 
     let collect = async move {
         let mut data = Vec::with_capacity(pending.len());
         for (index, recv) in pending.into_iter().enumerate() {
-            let embedding = recv.await
+            let embedding = recv
+                .await
                 .map_err(|_| error(StatusCode::SERVICE_UNAVAILABLE, "worker stopped"))?
                 .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
 
@@ -137,7 +153,8 @@ async fn embeddings(
         Ok::<_, ApiError>(data)
     };
 
-    let data = tokio::time::timeout(Duration::from_secs(30), collect).await
+    let data = tokio::time::timeout(Duration::from_secs(30), collect)
+        .await
         .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "embedding timeout"))??;
 
     Ok(Json(json!({
@@ -154,14 +171,14 @@ async fn embeddings(
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let dir = PathBuf::from(std::env::var("MODEL_DIR")?);
-    let cfg: EngineConfig =
-        serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
+    let cfg: EngineConfig = serde_json::from_slice(&std::fs::read(dir.join("engine.json"))?)?;
 
     let mut tokenizer = Tokenizer::from_file(dir.join("tokenizer.json"))
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     // No hidden tokenizer-side truncation or padding.
-    tokenizer.with_truncation(None)
+    tokenizer
+        .with_truncation(None)
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     tokenizer.with_padding(None);
 

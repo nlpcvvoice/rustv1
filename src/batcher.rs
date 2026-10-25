@@ -14,37 +14,45 @@ pub struct Job {
     pub reply: oneshot::Sender<Result<Vec<f32>, String>>,
 }
 
-pub fn start(
-    dir: PathBuf,
-    cfg: EngineConfig,
-    cpu: bool,
-) -> Result<SyncSender<Job>> {
+pub fn start(dir: PathBuf, cfg: EngineConfig, cpu: bool) -> Result<SyncSender<Job>> {
     ensure!(cfg.max_seqs > 0, "max_seqs must be positive");
     ensure!(cfg.max_tokens >= cfg.max_len, "one sequence must fit");
 
     let (tx, rx) = mpsc::sync_channel::<Job>(128);
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
 
-    thread::Builder::new().name("rustv1-gpu".into()).spawn(move || {
-        let load = || -> Result<Model> {
-            let device = if cpu { Device::Cpu } else { Device::new_cuda(0)? };
-            let dtype = if cpu { candle_core::DType::F32 } else { candle_core::DType::BF16 };
-            Model::load(&dir, device, cfg.clone(), dtype)
-        };
+    thread::Builder::new()
+        .name("rustv1-gpu".into())
+        .spawn(move || {
+            let load = || -> Result<Model> {
+                let device = if cpu {
+                    Device::Cpu
+                } else {
+                    Device::new_cuda(0)?
+                };
+                let dtype = if cpu {
+                    candle_core::DType::F32
+                } else {
+                    candle_core::DType::BF16
+                };
+                Model::load(&dir, device, cfg.clone(), dtype)
+            };
 
-        let model = match load() {
-            Ok(m) => m,
-            Err(e) => {
-                let _ = ready_tx.send(Err(format!("{e:#}")));
-                return;
-            }
-        };
+            let model = match load() {
+                Ok(m) => m,
+                Err(e) => {
+                    let _ = ready_tx.send(Err(format!("{e:#}")));
+                    return;
+                }
+            };
 
-        let _ = ready_tx.send(Ok(()));
-        run(model, cfg, rx);
-    })?;
+            let _ = ready_tx.send(Ok(()));
+            run(model, cfg, rx);
+        })?;
 
-    ready_rx.recv().map_err(|e| anyhow!(e))?
+    ready_rx
+        .recv()
+        .map_err(|e| anyhow!(e))?
         .map_err(|e| anyhow!(e))?;
     Ok(tx)
 }

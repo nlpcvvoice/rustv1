@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, State},
@@ -11,7 +11,7 @@ use rustv1::model::IndependentExecutor;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -39,6 +39,7 @@ struct EmbeddingRequest {
     #[serde(default)]
     encoding_format: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     user: Option<String>,
 }
 
@@ -54,13 +55,17 @@ impl RequestInput {
         match self {
             Self::Single(s) => {
                 if s.trim().is_empty() {
-                    return Err(AppError::InvalidInput("input text must not be empty".into()));
+                    return Err(AppError::InvalidInput(
+                        "input text must not be empty".into(),
+                    ));
                 }
                 Ok(vec![s])
             }
             Self::Batch(v) => {
                 if v.is_empty() {
-                    return Err(AppError::InvalidInput("batch input must not be empty".into()));
+                    return Err(AppError::InvalidInput(
+                        "batch input must not be empty".into(),
+                    ));
                 }
                 if v.len() > MAX_STRINGS_PER_REQ {
                     return Err(AppError::InvalidInput(format!(
@@ -119,11 +124,7 @@ enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, err_type, message) = match self {
-            Self::InvalidInput(msg) => (
-                StatusCode::BAD_REQUEST,
-                "invalid_request_error",
-                msg,
-            ),
+            Self::InvalidInput(msg) => (StatusCode::BAD_REQUEST, "invalid_request_error", msg),
             Self::PayloadTooLarge => (
                 StatusCode::PAYLOAD_TOO_LARGE,
                 "invalid_request_error",
@@ -139,11 +140,7 @@ impl IntoResponse for AppError {
                 "service_unavailable_error",
                 "executor entered a terminal failure state; process restart required".to_string(),
             ),
-            Self::Internal(msg) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "api_error",
-                msg,
-            ),
+            Self::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "api_error", msg),
         };
 
         let body = json!({
@@ -155,7 +152,12 @@ impl IntoResponse for AppError {
             }
         });
 
-        (status, [(header::CONTENT_TYPE, "application/json")], Json(body)).into_response()
+        (
+            status,
+            [(header::CONTENT_TYPE, "application/json")],
+            Json(body),
+        )
+            .into_response()
     }
 }
 
@@ -197,7 +199,7 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn embeddings(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, AppError> {
     if state.poisoned_flag.load(Ordering::Acquire) {
@@ -233,10 +235,9 @@ async fn embeddings(
     let mut total_tokens = 0usize;
 
     for (idx, text) in texts.iter().enumerate() {
-        let enc = state
-            .tokenizer
-            .encode(text.as_str(), false)
-            .map_err(|e| AppError::InvalidInput(format!("tokenization failed at item {idx}: {e}")))?;
+        let enc = state.tokenizer.encode(text.as_str(), false).map_err(|e| {
+            AppError::InvalidInput(format!("tokenization failed at item {idx}: {e}"))
+        })?;
         let ids = enc.get_ids().to_vec();
 
         if ids.is_empty() {
@@ -339,7 +340,9 @@ fn run_worker(
                 if executor.is_poisoned() {
                     poisoned_flag.store(true, Ordering::Release);
                 }
-                let _ = job.responder.send(Err(AppError::Internal(format!("{e:#}"))));
+                let _ = job
+                    .responder
+                    .send(Err(AppError::Internal(format!("{e:#}"))));
             }
         }
     }
@@ -423,10 +426,10 @@ mod tests {
     use axum::{
         body::Body,
         http::{Request, StatusCode},
-        routing::{get, post},
+        routing::get,
         Router,
     };
-    use http_body_util::BodyExt;
+
     use serde_json::json;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -467,7 +470,7 @@ mod tests {
     #[tokio::test]
     async fn readyz_reports_poison_status() {
         let poisoned = Arc::new(AtomicBool::new(false));
-        let (tx, _rx) = mpsc::channel::<super::InferenceJob>(1);
+        let (_tx, _rx) = mpsc::channel::<super::InferenceJob>(1);
 
         // Dummy test router
         let p_clone = poisoned.clone();

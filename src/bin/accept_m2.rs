@@ -9,24 +9,21 @@ use std::{
 
 const WIDTH: usize = 2048;
 const SAMPLES: usize = 22;
-const AUDIT_PATH: &str =
-    "audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json";
+const AUDIT_PATH: &str = "audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json";
 
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
 fn file_sha256(path: &Path) -> Result<String> {
-    Ok(sha256(&fs::read(path)
-        .with_context(|| format!("read {}", path.display()))?))
+    Ok(sha256(
+        &fs::read(path).with_context(|| format!("read {}", path.display()))?,
+    ))
 }
 
 fn read_json(path: &Path) -> Result<Value> {
-    serde_json::from_slice(
-        &fs::read(path)
-            .with_context(|| format!("read {}", path.display()))?,
-    )
-    .with_context(|| format!("parse {}", path.display()))
+    serde_json::from_slice(&fs::read(path).with_context(|| format!("read {}", path.display()))?)
+        .with_context(|| format!("parse {}", path.display()))
 }
 
 fn emit(value: Value) {
@@ -35,11 +32,7 @@ fn emit(value: Value) {
 
 /// One record per executed test. Details are nested so callers cannot
 /// accidentally replace kind/sample/pass.
-fn test<T>(
-    kind: &str,
-    sample: Value,
-    body: impl FnOnce() -> Result<(T, Value)>,
-) -> Result<T> {
+fn test<T>(kind: &str, sample: Value, body: impl FnOnce() -> Result<(T, Value)>) -> Result<T> {
     match body() {
         Ok((output, details)) => {
             emit(json!({
@@ -68,7 +61,8 @@ fn validate_row(row: &[f32], label: &str) -> Result<f64> {
         row.iter().all(|x| x.is_finite()),
         "{label}: nonfinite embedding"
     );
-    let norm = row.iter()
+    let norm = row
+        .iter()
         .map(|&x| f64::from(x).powi(2))
         .sum::<f64>()
         .sqrt();
@@ -80,11 +74,7 @@ fn validate_row(row: &[f32], label: &str) -> Result<f64> {
 }
 
 // Verbatim helper from consultation #12.
-fn require_bit_identity(
-    actual: &[f32],
-    expected: &[f32],
-    label: &str,
-) -> anyhow::Result<()> {
+fn require_bit_identity(actual: &[f32], expected: &[f32], label: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
         actual.len() == 2048 && expected.len() == 2048,
         "{label}: wrong embedding width"
@@ -94,7 +84,9 @@ fn require_bit_identity(
         "{label}: nonfinite embedding"
     );
     anyhow::ensure!(
-        actual.iter().zip(expected)
+        actual
+            .iter()
+            .zip(expected)
             .all(|(a, b)| a.to_bits() == b.to_bits()),
         "{label}: independent-sequence output changed bits"
     );
@@ -155,11 +147,17 @@ fn load_reference(path: &Path) -> Result<Vec<Vec<f32>>> {
         "reference must contain exactly 22*2048 little-endian f32 values"
     );
 
-    let values: Vec<f32> = bytes.chunks_exact(4)
+    let values: Vec<f32> = bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         .collect();
 
-    let rows: Vec<Vec<f32>> = values.chunks_exact(WIDTH)
+    let rows: Vec<Vec<f32>> = values
+        .as_chunks::<WIDTH>()
+        .0
+        .iter()
         .map(|row| row.to_vec())
         .collect();
 
@@ -176,8 +174,8 @@ fn load_reference(path: &Path) -> Result<Vec<Vec<f32>>> {
 /// versions and Cargo.lock binding. It does not independently establish that
 /// the human source-audit conclusions are correct, or rehash registry sources.
 fn audit_identity() -> Result<(String, Value)> {
-    let identity = std::env::var("RV1_CUDA_MATH_AUDIT")
-        .context("RV1_CUDA_MATH_AUDIT is required")?;
+    let identity =
+        std::env::var("RV1_CUDA_MATH_AUDIT").context("RV1_CUDA_MATH_AUDIT is required")?;
     let mut fields = identity.splitn(3, ':');
     ensure!(fields.next() == Some("sha256"), "invalid audit scheme");
     let digest = fields.next().context("missing audit digest")?;
@@ -185,16 +183,16 @@ fn audit_identity() -> Result<(String, Value)> {
 
     ensure!(
         digest.len() == 64
-            && digest.bytes().all(|b|
-                b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            && digest
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
         "audit digest must be 64 lowercase hexadecimal characters"
     );
     ensure!(relative == AUDIT_PATH, "unexpected audit artifact path");
 
     let path = Path::new(relative);
     ensure!(
-        !path.is_absolute()
-            && path.components().all(|c| matches!(c, Component::Normal(_))),
+        !path.is_absolute() && path.components().all(|c| matches!(c, Component::Normal(_))),
         "audit path must be repository-relative without traversal"
     );
 
@@ -221,12 +219,15 @@ fn audit_identity() -> Result<(String, Value)> {
         "audit Cargo.lock binding mismatch"
     );
 
-    Ok((identity.clone(), json!({
-        "identity": identity,
-        "artifact_sha256": digest,
-        "cargo_lock_sha256": lock_hash,
-        "source_audit_conclusions": "caller_attested_not_rederived_by_driver"
-    })))
+    Ok((
+        identity.clone(),
+        json!({
+            "identity": identity,
+            "artifact_sha256": digest,
+            "cargo_lock_sha256": lock_hash,
+            "source_audit_conclusions": "caller_attested_not_rederived_by_driver"
+        }),
+    ))
 }
 
 fn invariant_request(
@@ -239,9 +240,7 @@ fn invariant_request(
 ) -> Result<()> {
     test(kind, json!(indices), || {
         ensure!(!indices.is_empty(), "empty invariant test");
-        let sequences: Vec<Vec<u32>> = indices.iter()
-            .map(|&i| prompts[i].clone())
-            .collect();
+        let sequences: Vec<Vec<u32>> = indices.iter().map(|&i| prompts[i].clone()).collect();
 
         let output = executor.forward_serving(&sequences)?;
         ensure!(
@@ -266,11 +265,14 @@ fn invariant_request(
             }));
         }
 
-        Ok(((), json!({
-            "logical_input_count": sequences.len(),
-            "physical_execution": "one_B1_forward_per_sequence",
-            "rows": rows
-        })))
+        Ok((
+            (),
+            json!({
+                "logical_input_count": sequences.len(),
+                "physical_execution": "one_B1_forward_per_sequence",
+                "rows": rows
+            }),
+        ))
     })
 }
 
@@ -285,7 +287,8 @@ fn invalid_then_recover(
 ) -> Result<()> {
     test("invalid_request", json!(name), || {
         let before = fs::read(manifest_path)?;
-        let error = executor.forward_serving(&invalid)
+        let error = executor
+            .forward_serving(&invalid)
             .err()
             .context("invalid request unexpectedly succeeded")?;
 
@@ -298,11 +301,14 @@ fn invalid_then_recover(
             "{name}: invalid request launched or recorded physical work"
         );
 
-        Ok(((), json!({
-            "rejection": format!("{error:#}"),
-            "poisoned": false,
-            "manifest_unchanged": true
-        })))
+        Ok((
+            (),
+            json!({
+                "rejection": format!("{error:#}"),
+                "poisoned": false,
+                "manifest_unchanged": true
+            }),
+        ))
     })?;
 
     invariant_request(
@@ -318,11 +324,7 @@ fn invalid_then_recover(
 /// Public so parity_run can execute exactly the same acceptance suite.
 /// The caller retains its existing artifact/exception binding checks.
 /// This function emits test records but not the final "done" record.
-pub fn run_suite(
-    model_dir: &Path,
-    manifest_path: &Path,
-    policy: &Value,
-) -> Result<()> {
+pub fn run_suite(model_dir: &Path, manifest_path: &Path, policy: &Value) -> Result<()> {
     let prompts_path = Path::new("results/prompts.json");
     let reference_path = Path::new("results/ref_single.f32");
 
@@ -332,15 +334,12 @@ pub fn run_suite(
             anyhow::ensure!(
                 policy["samples"]
                     .as_array()
-                    .ok_or_else(|| anyhow::anyhow!(
-                        "policy samples must be an array"
-                    ))?
+                    .ok_or_else(|| anyhow::anyhow!("policy samples must be an array"))?
                     .is_empty(),
                 "M2 independent-F permits no active exceptions"
             );
 
-            let prompts: Vec<Vec<u32>> =
-                serde_json::from_slice(&fs::read(prompts_path)?)?;
+            let prompts: Vec<Vec<u32>> = serde_json::from_slice(&fs::read(prompts_path)?)?;
             ensure!(prompts.len() == SAMPLES, "expected exactly 22 prompts");
 
             let engine = read_json(&model_dir.join("engine.json"))?;
@@ -350,9 +349,9 @@ pub fn run_suite(
             );
 
             let config = read_json(&model_dir.join("config.json"))?;
-            let vocab_size = u32::try_from(
-                config["vocab_size"].as_u64().context("config vocab_size")?
-            ).context("vocab_size cannot be represented as an OOV u32")?;
+            let vocab_size =
+                u32::try_from(config["vocab_size"].as_u64().context("config vocab_size")?)
+                    .context("vocab_size cannot be represented as an OOV u32")?;
             ensure!(vocab_size > 11, "invalid vocabulary size");
 
             for (i, prompt) in prompts.iter().enumerate() {
@@ -366,12 +365,15 @@ pub fn run_suite(
                 );
             }
 
-            let short = prompts.iter().enumerate()
+            let short = prompts
+                .iter()
+                .enumerate()
                 .min_by_key(|(_, p)| p.len())
                 .map(|(i, _)| i)
                 .context("missing short sample")?;
             ensure!(prompts[short].len() <= 16, "missing short sample");
-            let long = prompts.iter()
+            let long = prompts
+                .iter()
                 .position(|p| p.len() == 1024)
                 .context("missing length-1024 sample")?;
 
@@ -401,26 +403,22 @@ pub fn run_suite(
 
     // Exactly one live executor is created for all eight closure groups.
     let mut executor = test("open_route", Value::Null, || {
-        let executor = rustv1::m2_route::open(
-            model_dir,
-            manifest_path,
-            0,
-            &audit,
-        )?;
-        Ok((executor, json!({
-            "device_ordinal": 0,
-            "route": "rustv1::m2_route::open",
-            "manifest_path": manifest_path
-        })))
+        let executor = rustv1::m2_route::open(model_dir, manifest_path, 0, &audit)?;
+        Ok((
+            executor,
+            json!({
+                "device_ordinal": 0,
+                "route": "rustv1::m2_route::open",
+                "manifest_path": manifest_path
+            }),
+        ))
     })?;
 
     // Group 1: genuine singleton baselines, all 22 against the frozen reference.
     let mut baselines = Vec::with_capacity(SAMPLES);
     for i in 0..SAMPLES {
         let row = test("singleton_reference", json!(i), || {
-            let output = executor.forward_serving(
-                std::slice::from_ref(&prompts[i])
-            )?;
+            let output = executor.forward_serving(std::slice::from_ref(&prompts[i]))?;
             ensure!(output.len() == 1, "singleton cardinality");
             let metrics = compare(
                 &output[0],
@@ -441,40 +439,60 @@ pub fn run_suite(
     let natural: Vec<usize> = (0..SAMPLES).collect();
     for group in natural.chunks(4) {
         invariant_request(
-            &mut executor, &prompts, &baselines, group,
-            "multi_input", 0.9999,
+            &mut executor,
+            &prompts,
+            &baselines,
+            group,
+            "multi_input",
+            0.9999,
         )?;
     }
     invariant_request(
-        &mut executor, &prompts, &baselines, &[short, long],
-        "multi_input_short_1024", 0.9999,
+        &mut executor,
+        &prompts,
+        &baselines,
+        &[short, long],
+        "multi_input_short_1024",
+        0.9999,
     )?;
 
     // Group 3: reverse and deterministic Fisher-Yates shuffle.
     let reversed: Vec<usize> = natural.iter().copied().rev().collect();
     invariant_request(
-        &mut executor, &prompts, &baselines, &reversed,
-        "reversed", 0.9999,
+        &mut executor,
+        &prompts,
+        &baselines,
+        &reversed,
+        "reversed",
+        0.9999,
     )?;
 
     let mut shuffled = natural.clone();
     let mut state = 0x5256_314d_3253_4855u64;
     for i in (1..shuffled.len()).rev() {
-        state = state.wrapping_mul(6364136223846793005)
+        state = state
+            .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
         let j = (state % ((i + 1) as u64)) as usize;
         shuffled.swap(i, j);
     }
     invariant_request(
-        &mut executor, &prompts, &baselines, &shuffled,
-        "deterministic_shuffle", 0.9999,
+        &mut executor,
+        &prompts,
+        &baselines,
+        &shuffled,
+        "deterministic_shuffle",
+        0.9999,
     )?;
 
     // Group 4: duplicates must equal both each other and their singleton.
     invariant_request(
-        &mut executor, &prompts, &baselines,
+        &mut executor,
+        &prompts,
+        &baselines,
         &[short, long, short, long],
-        "duplicates", 0.9999,
+        "duplicates",
+        0.9999,
     )?;
 
     // Group 5: repeat exactly the same input array and physical shapes.
@@ -482,18 +500,27 @@ pub fn run_suite(
     // against each other, retaining the stricter repeated-execution cosine.
     for repeat in 0..3 {
         invariant_request(
-            &mut executor, &prompts, &baselines, &[short, long],
-            &format!("repeat_identical_shape_{repeat}"), 0.999999,
+            &mut executor,
+            &prompts,
+            &baselines,
+            &[short, long],
+            &format!("repeat_identical_shape_{repeat}"),
+            0.999999,
         )?;
     }
 
     // Group 6: changing length across separate logical requests.
     for (step, sample) in [short, long, short, long, short, long]
-        .into_iter().enumerate()
+        .into_iter()
+        .enumerate()
     {
         invariant_request(
-            &mut executor, &prompts, &baselines, &[sample],
-            &format!("alternating_length_{step}"), 0.9999,
+            &mut executor,
+            &prompts,
+            &baselines,
+            &[sample],
+            &format!("alternating_length_{step}"),
+            0.9999,
         )?;
     }
 
@@ -524,8 +551,7 @@ pub fn run_suite(
     // Group 8 MUST be last: this deliberately destroys executor usability.
     test("operational_error_poison", json!(short), || {
         use candle_core::cuda_backend::{
-            gemm_reduced_precision_f32,
-            set_gemm_reduced_precision_f32,
+            gemm_reduced_precision_f32, set_gemm_reduced_precision_f32,
         };
 
         ensure!(!executor.is_poisoned(), "executor already poisoned");
@@ -552,7 +578,8 @@ pub fn run_suite(
             // synchronously by MathModePin::check. forward_serving marks the
             // executor poisoned BEFORE that check. No GPU fault, allocation
             // failure, race, or actual reduced-precision GEMM is needed.
-            executor.forward_serving(std::slice::from_ref(&valid))
+            executor
+                .forward_serving(std::slice::from_ref(&valid))
                 .err()
                 .context("injected policy drift unexpectedly succeeded")?
         }; // Restore the flag, but do NOT clear either sticky failure state.
@@ -562,26 +589,27 @@ pub fn run_suite(
             "wrong injected failure: {error:#}"
         );
         ensure!(executor.is_poisoned(), "operational error did not poison");
-        ensure!(
-            !gemm_reduced_precision_f32(),
-            "injection cleanup failed"
-        );
+        ensure!(!gemm_reduced_precision_f32(), "injection cleanup failed");
         ensure!(
             fs::read(manifest_path)? == before,
             "policy drift should be detected before physical-forward begin"
         );
 
-        Ok(((), json!({
-            "error": format!("{error:#}"),
-            "poisoned": true,
-            "global_flag_restored": true,
-            "manifest_unchanged": true
-        })))
+        Ok((
+            (),
+            json!({
+                "error": format!("{error:#}"),
+                "poisoned": true,
+                "global_flag_restored": true,
+                "manifest_unchanged": true
+            }),
+        ))
     })?;
 
     test("poisoned_request_refused", json!(short), || {
         let before = fs::read(manifest_path)?;
-        let error = executor.forward_serving(std::slice::from_ref(&valid))
+        let error = executor
+            .forward_serving(std::slice::from_ref(&valid))
             .err()
             .context("poisoned executor accepted a request")?;
         ensure!(
@@ -594,11 +622,14 @@ pub fn run_suite(
             "poisoned request performed physical work"
         );
 
-        Ok(((), json!({
-            "error": format!("{error:#}"),
-            "poisoned": true,
-            "manifest_unchanged": true
-        })))
+        Ok((
+            (),
+            json!({
+                "error": format!("{error:#}"),
+                "poisoned": true,
+                "manifest_unchanged": true
+            }),
+        ))
     })?;
 
     // Success here includes the EXPECTED final poisoned state.
@@ -607,28 +638,27 @@ pub fn run_suite(
 }
 
 fn entry() -> Result<()> {
-    let (model_dir, manifest_path, policy) =
-        test("arguments_and_policy", Value::Null, || {
-            let args: Vec<String> = std::env::args().collect();
-            ensure!(
-                args.len() == 4,
-                "usage: accept_m2 MODEL_DIR NEW_EXECUTOR_MANIFEST_JSONL \
+    let (model_dir, manifest_path, policy) = test("arguments_and_policy", Value::Null, || {
+        let args: Vec<String> = std::env::args().collect();
+        ensure!(
+            args.len() == 4,
+            "usage: accept_m2 MODEL_DIR NEW_EXECUTOR_MANIFEST_JSONL \
                  M2_EXCEPTION_POLICY_JSON"
-            );
+        );
 
-            let model_dir = PathBuf::from(&args[1]);
-            let manifest_path = PathBuf::from(&args[2]);
-            let policy_path = PathBuf::from(&args[3]);
-            let policy = read_json(&policy_path)?;
+        let model_dir = PathBuf::from(&args[1]);
+        let manifest_path = PathBuf::from(&args[2]);
+        let policy_path = PathBuf::from(&args[3]);
+        let policy = read_json(&policy_path)?;
 
-            Ok((
-                (model_dir, manifest_path, policy),
-                json!({
-                    "policy_path": policy_path,
-                    "policy_file_sha256": file_sha256(&policy_path)?
-                }),
-            ))
-        })?;
+        Ok((
+            (model_dir, manifest_path, policy),
+            json!({
+                "policy_path": policy_path,
+                "policy_file_sha256": file_sha256(&policy_path)?
+            }),
+        ))
+    })?;
 
     run_suite(&model_dir, &manifest_path, &policy)
 }
