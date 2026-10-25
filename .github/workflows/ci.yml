@@ -7,54 +7,166 @@ on:
 permissions:
   contents: read
 
+env:
+  RUSTUP_TOOLCHAIN: "1.99.1"
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   fmt:
     name: Rust formatting
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --check
+
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 \
+            --profile minimal \
+            --component rustfmt
+
+      - name: Print and verify effective toolchain
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          rustc +1.99.1 --version --verbose
+          cargo +1.99.1 --version
+          rustfmt +1.99.1 --version
+          test "$(rustc +1.99.1 --version | awk '{print $2}')" = "1.99.1"
+
+      - name: Check formatting
+        run: cargo +1.99.1 fmt --all -- --check
 
   test:
-    name: CPU tests
+    name: CPU checks and tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --locked
+
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 \
+            --profile minimal \
+            --component clippy
+
+      - name: Print and verify effective toolchain
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          rustc +1.99.1 --version --verbose
+          cargo +1.99.1 --version
+          cargo +1.99.1 clippy --version
+          test "$(rustc +1.99.1 --version | awk '{print $2}')" = "1.99.1"
+
+      - name: Check CPU targets
+        run: cargo +1.99.1 check --locked --no-default-features --all-targets
+
+      - name: Run CPU tests
+        run: cargo +1.99.1 test --locked --no-default-features
+
+      - name: Run CPU Clippy
+        run: |
+          cargo +1.99.1 clippy \
+            --locked \
+            --no-default-features \
+            --all-targets \
+            -- -D warnings
 
   cuda:
-    name: CUDA ${{ matrix.task }}
+    name: CUDA ${{ matrix.cuda.version }} cap-${{ matrix.cuda.cap }} ${{ matrix.task }}
     runs-on: ubuntu-latest
-    container:
-      image: nvidia/cuda:12.4.1-devel-ubuntu22.04
+    timeout-minutes: 60
+
     strategy:
       fail-fast: false
       matrix:
-        task: [clippy, check]
+        cuda:
+          - version: "12.4.1"
+            image: nvidia/cuda:12.4.1-devel-ubuntu22.04
+            cap: "89"
+          - version: "12.8.1"
+            image: nvidia/cuda:12.8.1-devel-ubuntu22.04
+            cap: "100"
+        task:
+          - check
+          - clippy
+
+    container:
+      image: ${{ matrix.cuda.image }}
+
     env:
-      CUDA_COMPUTE_CAP: "89"
+      CUDA_COMPUTE_CAP: ${{ matrix.cuda.cap }}
+      CUDA_HOME: /usr/local/cuda
+      CUDA_PATH: /usr/local/cuda
+      CARGO_BUILD_JOBS: "2"
+
     steps:
       - name: Install build prerequisites
         run: |
+          set -euo pipefail
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential ca-certificates curl git libssl-dev pkg-config
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            curl \
+            git \
+            libssl-dev \
+            pkg-config
           rm -rf /var/lib/apt/lists/*
 
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+            https://sh.rustup.rs \
+            -o /tmp/rustup-init.sh
+          sh /tmp/rustup-init.sh \
+            -y \
+            --no-modify-path \
+            --profile minimal \
+            --default-toolchain 1.99.1 \
+            --component clippy
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          echo "/usr/local/cuda/bin" >> "${GITHUB_PATH}"
+
+      - name: Print and verify effective toolchain and CUDA target
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          rustc +1.99.1 --version --verbose
+          cargo +1.99.1 --version
+          cargo +1.99.1 clippy --version
+          test "$(rustc +1.99.1 --version | awk '{print $2}')" = "1.99.1"
+          nvcc --version
+          printf 'CUDA image: %s\n' '${{ matrix.cuda.image }}'
+          printf 'CUDA_COMPUTE_CAP=%s\n' "${CUDA_COMPUTE_CAP}"
+          test "${CUDA_COMPUTE_CAP}" = '${{ matrix.cuda.cap }}'
+
+      - name: Check CUDA binaries
+        if: matrix.task == 'check'
+        run: |
+          cargo +1.99.1 check \
+            --locked \
+            --no-default-features \
+            --features cuda \
+            --bins
 
       - name: Run CUDA Clippy
         if: matrix.task == 'clippy'
-        run: cargo clippy --locked --features cuda -- -D warnings
-
-      - name: Check CUDA targets
-        if: matrix.task == 'check'
-        run: cargo check --locked --features cuda --bins
+        run: |
+          cargo +1.99.1 clippy \
+            --locked \
+            --no-default-features \
+            --features cuda \
+            --all-targets \
+            -- -D warnings
