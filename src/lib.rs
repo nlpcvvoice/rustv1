@@ -1,6 +1,7 @@
 pub mod batcher;
 #[cfg(feature = "cuda")]
 pub mod cuda_math;
+pub mod http_serve;
 #[cfg(feature = "cuda")]
 pub mod m2_route;
 pub mod model;

@@ -1,505 +1,284 @@
-use anyhow::{ensure, Context, Result};
-use axum::{
-    body::Bytes,
-    extract::{DefaultBodyLimit, State},
-    http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    routing::{get, post},
-    Json, Router,
-};
-use rustv1::model::IndependentExecutor;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::{
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
+use rustv1::{
+    http_serve::{
+        bind_control, serve_control, Backend, BoundedListener, Code, Config, Logger,
+        PinnedTokenizer, Service, StartupCheck,
     },
-    thread,
+    model::{EngineConfig, IndependentExecutor},
 };
-use tokenizers::Tokenizer;
-use tokio::sync::{mpsc, oneshot};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{net::TcpListener, sync::oneshot, time::timeout};
 
-// ---------------------------------------------------------------------------
-// Wire Protocol Definitions
-// ---------------------------------------------------------------------------
-
-const MAX_BODY_BYTES: usize = 1024 * 1024; // 1 MiB hard ceiling
-const MAX_STRINGS_PER_REQ: usize = 8;
-const MAX_TOKENS_PER_SEQ: usize = 1024;
-const PAD_TOKEN_ID: u32 = 11;
-const EXPECTED_MODEL_ID: &str = "nvidia/Nemotron-3-Embed-1B";
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EmbeddingRequest {
-    model: String,
-    input: RequestInput,
-    #[serde(default)]
-    encoding_format: Option<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    user: Option<String>,
+struct CudaBackend {
+    executor: IndependentExecutor,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RequestInput {
-    Single(String),
-    Batch(Vec<String>),
-}
+impl Backend for CudaBackend {
+    fn forward(&mut self, batches: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Code> {
+        self.executor
+            .forward_serving(batches)
+            .map_err(|_| Code::InferenceFailed)
+    }
 
-impl RequestInput {
-    fn into_vec(self) -> Result<Vec<String>, AppError> {
-        match self {
-            Self::Single(s) => {
-                if s.trim().is_empty() {
-                    return Err(AppError::InvalidInput(
-                        "input text must not be empty".into(),
-                    ));
-                }
-                Ok(vec![s])
-            }
-            Self::Batch(v) => {
-                if v.is_empty() {
-                    return Err(AppError::InvalidInput(
-                        "batch input must not be empty".into(),
-                    ));
-                }
-                if v.len() > MAX_STRINGS_PER_REQ {
-                    return Err(AppError::InvalidInput(format!(
-                        "batch exceeds maximum allowed elements (got {}, max {})",
-                        v.len(),
-                        MAX_STRINGS_PER_REQ
-                    )));
-                }
-                for (i, s) in v.iter().enumerate() {
-                    if s.trim().is_empty() {
-                        return Err(AppError::InvalidInput(format!(
-                            "element {i} in batch must not be empty"
-                        )));
-                    }
-                }
-                Ok(v)
-            }
-        }
+    fn inject_policy_drift(&mut self) -> Result<(), Code> {
+        candle_core::cuda_backend::set_gemm_reduced_precision_f32(true);
+        Ok(())
+    }
+
+    fn restore_policy(&mut self) -> Result<(), Code> {
+        candle_core::cuda_backend::set_gemm_reduced_precision_f32(false);
+        candle_core::cuda_backend::set_gemm_reduced_precision_f16(false);
+        candle_core::cuda_backend::set_gemm_reduced_precision_bf16(false);
+        // This intentionally does not replace or unpoison the executor.
+        Ok(())
     }
 }
 
-#[derive(Debug, Serialize)]
-struct EmbeddingResponse {
-    object: &'static str,
-    data: Vec<EmbeddingData>,
-    model: String,
-    usage: UsageStats,
+struct Args {
+    model_dir: PathBuf,
+    manifest: PathBuf,
+    audit_identity: String,
+    bind: SocketAddr,
+    queue_capacity: usize,
+    tokenizer_sha256: String,
+    startup_check: PathBuf,
+    startup_check_sha256: String,
+    control: Option<SocketAddr>,
 }
 
-#[derive(Debug, Serialize)]
-struct EmbeddingData {
-    object: &'static str,
-    index: usize,
-    embedding: Vec<f32>,
-}
-
-#[derive(Debug, Serialize)]
-struct UsageStats {
-    prompt_tokens: usize,
-    total_tokens: usize,
-}
-
-// ---------------------------------------------------------------------------
-// Error Handling
-// ---------------------------------------------------------------------------
-
-#[derive(Debug)]
-enum AppError {
-    InvalidInput(String),
-    PayloadTooLarge,
-    QueueFull,
-    ExecutorPoisoned,
-    Internal(String),
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let (status, err_type, message) = match self {
-            Self::InvalidInput(msg) => (StatusCode::BAD_REQUEST, "invalid_request_error", msg),
-            Self::PayloadTooLarge => (
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "invalid_request_error",
-                "request payload exceeded maximum size of 1 MiB".to_string(),
-            ),
-            Self::QueueFull => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable_error",
-                "request queue is full; executor is saturated".to_string(),
-            ),
-            Self::ExecutorPoisoned => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable_error",
-                "executor entered a terminal failure state; process restart required".to_string(),
-            ),
-            Self::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "api_error", msg),
+impl Args {
+    fn parse() -> Result<Self, Code> {
+        // serve_m3 MODEL_DIR MANIFEST_JSONL AUDIT_IDENTITY BIND_ADDR
+        //          QUEUE_CAPACITY TOKENIZER_SHA256 STARTUP_CHECK_JSON
+        //          STARTUP_CHECK_SHA256 CONTROL_ADDR_OR_DASH
+        //
+        // STARTUP_CHECK_JSON:
+        // {"tokens":[[...]],"embeddings":[[...2048 F32 values...]]}
+        //
+        // The startup artifact must come from accepted in-process evidence,
+        // not from this server's own startup execution.
+        //
+        // Control is disabled with "-". Otherwise its address must be loopback,
+        // and M3_ACCEPTANCE_SECRET must contain 32..256 bytes.
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() != 10 {
+            return Err(Code::InvalidRequest);
+        }
+        let control = if args[9] == "-" {
+            None
+        } else {
+            let address: SocketAddr = args[9].parse().map_err(|_| Code::InvalidRequest)?;
+            if !address.ip().is_loopback() {
+                return Err(Code::InvalidRequest);
+            }
+            Some(address)
         };
-
-        let body = json!({
-            "error": {
-                "message": message,
-                "type": err_type,
-                "param": Value::Null,
-                "code": Value::Null
-            }
-        });
-
-        (
-            status,
-            [(header::CONTENT_TYPE, "application/json")],
-            Json(body),
-        )
-            .into_response()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Worker Message Queue
-// ---------------------------------------------------------------------------
-
-struct InferenceJob {
-    token_batches: Vec<Vec<u32>>,
-    responder: oneshot::Sender<Result<Vec<Vec<f32>>, AppError>>,
-}
-
-#[derive(Clone)]
-struct AppState {
-    tx: mpsc::Sender<InferenceJob>,
-    tokenizer: Arc<Tokenizer>,
-    vocab_size: usize,
-    poisoned_flag: Arc<AtomicBool>,
-}
-
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
-
-async fn livez() -> impl IntoResponse {
-    StatusCode::OK
-}
-
-async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
-    if state.poisoned_flag.load(Ordering::Acquire) {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "executor poisoned; restart required",
-        )
-    } else {
-        (StatusCode::OK, "ready")
-    }
-}
-
-async fn embeddings(
-    State(state): State<AppState>,
-    _headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response, AppError> {
-    if state.poisoned_flag.load(Ordering::Acquire) {
-        return Err(AppError::ExecutorPoisoned);
-    }
-
-    if body.len() > MAX_BODY_BYTES {
-        return Err(AppError::PayloadTooLarge);
-    }
-
-    let req: EmbeddingRequest = serde_json::from_slice(&body).map_err(|e| {
-        AppError::InvalidInput(format!("malformed JSON or unknown request fields: {e}"))
-    })?;
-
-    if req.model != EXPECTED_MODEL_ID {
-        return Err(AppError::InvalidInput(format!(
-            "invalid model '{}'; expected '{}'",
-            req.model, EXPECTED_MODEL_ID
-        )));
-    }
-
-    if let Some(ref fmt) = req.encoding_format {
-        if fmt != "float" {
-            return Err(AppError::InvalidInput(format!(
-                "unsupported encoding_format '{}'; only 'float' is implemented",
-                fmt
-            )));
+        let queue_capacity = args[5].parse().map_err(|_| Code::InvalidRequest)?;
+        if !(1..=4096).contains(&queue_capacity) {
+            return Err(Code::InvalidRequest);
         }
-    }
-
-    let texts = req.input.into_vec()?;
-    let mut token_batches = Vec::with_capacity(texts.len());
-    let mut total_tokens = 0usize;
-
-    for (idx, text) in texts.iter().enumerate() {
-        let enc = state.tokenizer.encode(text.as_str(), false).map_err(|e| {
-            AppError::InvalidInput(format!("tokenization failed at item {idx}: {e}"))
-        })?;
-        let ids = enc.get_ids().to_vec();
-
-        if ids.is_empty() {
-            return Err(AppError::InvalidInput(format!(
-                "item {idx} produced zero tokens"
-            )));
-        }
-        if ids.len() > MAX_TOKENS_PER_SEQ {
-            return Err(AppError::InvalidInput(format!(
-                "item {idx} produced {} tokens; exceeds limit of {}",
-                ids.len(),
-                MAX_TOKENS_PER_SEQ
-            )));
-        }
-        for &id in &ids {
-            if id == PAD_TOKEN_ID {
-                return Err(AppError::InvalidInput(format!(
-                    "item {idx} contains forbidden pad token ID ({PAD_TOKEN_ID})"
-                )));
-            }
-            if id as usize >= state.vocab_size {
-                return Err(AppError::InvalidInput(format!(
-                    "item {idx} contains out-of-vocabulary token ID {id}"
-                )));
-            }
-        }
-        total_tokens += ids.len();
-        token_batches.push(ids);
-    }
-
-    let (resp_tx, resp_rx) = oneshot::channel();
-    let job = InferenceJob {
-        token_batches,
-        responder: resp_tx,
-    };
-
-    state.tx.try_send(job).map_err(|e| match e {
-        mpsc::error::TrySendError::Full(_) => AppError::QueueFull,
-        mpsc::error::TrySendError::Closed(_) => {
-            state.poisoned_flag.store(true, Ordering::Release);
-            AppError::ExecutorPoisoned
-        }
-    })?;
-
-    let embeddings = resp_rx.await.map_err(|_| {
-        state.poisoned_flag.store(true, Ordering::Release);
-        AppError::ExecutorPoisoned
-    })??;
-
-    let data = embeddings
-        .into_iter()
-        .enumerate()
-        .map(|(index, embedding)| EmbeddingData {
-            object: "embedding",
-            index,
-            embedding,
+        Ok(Self {
+            model_dir: PathBuf::from(&args[1]),
+            manifest: PathBuf::from(&args[2]),
+            audit_identity: args[3].clone(),
+            bind: args[4].parse().map_err(|_| Code::InvalidRequest)?,
+            queue_capacity,
+            tokenizer_sha256: args[6].clone(),
+            startup_check: PathBuf::from(&args[7]),
+            startup_check_sha256: args[8].clone(),
+            control,
         })
-        .collect();
-
-    let response = EmbeddingResponse {
-        object: "list",
-        data,
-        model: req.model,
-        usage: UsageStats {
-            prompt_tokens: total_tokens,
-            total_tokens,
-        },
-    };
-
-    Ok((
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        Json(response),
-    )
-        .into_response())
+    }
 }
 
-// ---------------------------------------------------------------------------
-// Worker Implementation
-// ---------------------------------------------------------------------------
+fn integer(value: &Value, key: &str) -> Result<usize, Code> {
+    value
+        .get(key)
+        .and_then(Value::as_u64)
+        .and_then(|number| usize::try_from(number).ok())
+        .ok_or(Code::InvalidRequest)
+}
 
-fn run_worker(
-    mut executor: IndependentExecutor,
-    mut rx: mpsc::Receiver<InferenceJob>,
-    poisoned_flag: Arc<AtomicBool>,
-) {
-    while let Some(job) = rx.blocking_recv() {
-        if executor.is_poisoned() {
-            poisoned_flag.store(true, Ordering::Release);
-            let _ = job.responder.send(Err(AppError::ExecutorPoisoned));
-            continue;
-        }
-
-        let result = executor.forward_serving(&job.token_batches);
-        match result {
-            Ok(embeddings) => {
-                let _ = job.responder.send(Ok(embeddings));
-            }
-            Err(e) => {
-                if executor.is_poisoned() {
-                    poisoned_flag.store(true, Ordering::Release);
-                }
-                let _ = job
-                    .responder
-                    .send(Err(AppError::Internal(format!("{e:#}"))));
-            }
+async fn termination() -> Result<(), Code> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut terminate = signal(SignalKind::terminate()).map_err(|_| Code::NotReady)?;
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => result.map_err(|_| Code::NotReady),
+            _ = terminate.recv() => Ok(()),
         }
     }
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await.map_err(|_| Code::NotReady)
+    }
 }
 
-// ---------------------------------------------------------------------------
-// Entrypoint
-// ---------------------------------------------------------------------------
+async fn run() -> Result<(), Code> {
+    let args = Args::parse()?;
+    let control_secret = if args.control.is_some() {
+        let secret = std::env::var("M3_ACCEPTANCE_SECRET").map_err(|_| Code::InvalidRequest)?;
+        if !(32..=256).contains(&secret.len()) {
+            return Err(Code::InvalidRequest);
+        }
+        Some(secret)
+    } else {
+        None
+    };
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    ensure!(
-        args.len() == 6,
-        "usage: serve_m3 MODEL_DIR MANIFEST_JSONL AUDIT_IDENTITY BIND_ADDR QUEUE_CAPACITY"
-    );
+    let bind = args.bind;
+    let control_address = args.control;
+    let model_dir = args.model_dir.clone();
+    let tokenizer_sha256 = args.tokenizer_sha256;
+    let startup_path = args.startup_check;
+    let startup_sha256 = args.startup_check_sha256;
+    let queue_capacity = args.queue_capacity;
 
-    let model_dir = PathBuf::from(&args[1]);
-    let manifest_path = PathBuf::from(&args[2]);
-    let audit_identity = args[3].clone();
-    let bind_addr = args[4].clone();
-    let queue_capacity: usize = args[5].parse().context("invalid queue capacity")?;
+    // Filesystem IO, tokenizer construction, and hash verification do not run
+    // on a Tokio scheduler thread.
+    let load = tokio::task::spawn_blocking(move || {
+        let config_bytes =
+            std::fs::read(model_dir.join("config.json")).map_err(|_| Code::InvalidRequest)?;
+        let model: Value =
+            serde_json::from_slice(&config_bytes).map_err(|_| Code::InvalidRequest)?;
+        let engine_bytes =
+            std::fs::read(model_dir.join("engine.json")).map_err(|_| Code::InvalidRequest)?;
+        let engine: EngineConfig =
+            serde_json::from_slice(&engine_bytes).map_err(|_| Code::InvalidRequest)?;
 
-    let tokenizer_path = model_dir.join("tokenizer.json");
-    let tokenizer = Tokenizer::from_file(&tokenizer_path)
-        .map_err(|e| anyhow::anyhow!("tokenizer load error: {e}"))?;
+        let vocabulary_size = integer(&model, "vocab_size")?;
+        let model_limit = integer(&model, "max_position_embeddings")?;
+        if engine.max_len == 0
+            || engine.max_len > 1024
+            || engine.max_len > model_limit
+            || engine.max_seqs == 0
+            || engine.max_tokens < engine.max_len
+            || model.get("pad_token_id").and_then(Value::as_u64) != Some(11)
+        {
+            return Err(Code::InvalidRequest);
+        }
+        let config = Config::production(queue_capacity, vocabulary_size, engine.max_len);
+        config.validate()?;
+        let tokenizer = PinnedTokenizer::load(
+            &model_dir.join("tokenizer.json"),
+            &tokenizer_sha256,
+            vocabulary_size,
+        )?;
+        let check_bytes = std::fs::read(startup_path).map_err(|_| Code::InvalidRequest)?;
+        if startup_sha256.len() != 64
+            || format!("{:x}", Sha256::digest(&check_bytes)) != startup_sha256
+        {
+            return Err(Code::InvalidRequest);
+        }
+        let check: StartupCheck =
+            serde_json::from_slice(&check_bytes).map_err(|_| Code::InvalidRequest)?;
+        Ok::<_, Code>((config, Arc::new(tokenizer), check))
+    });
+    let (config, tokenizer, check) = timeout(Duration::from_secs(60), load)
+        .await
+        .map_err(|_| Code::DeadlineExceeded)?
+        .map_err(|_| Code::InvalidRequest)??;
 
-    let config_bytes = std::fs::read(model_dir.join("config.json"))?;
-    let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
-    let vocab_size = config["vocab_size"]
-        .as_u64()
-        .context("config missing vocab_size")? as usize;
+    // Bind before allocating CUDA resources, but do not accept requests until
+    // the owner-thread startup check has completed.
+    let listener = TcpListener::bind(bind)
+        .await
+        .map_err(|_| Code::InvalidRequest)?;
+    let listener = BoundedListener::new(listener, &config.transport)?;
+    let control_listener = match control_address {
+        Some(address) => Some(bind_control(address).await?),
+        None => None,
+    };
+    let grace = config.shutdown_grace;
+    let mut service = Service::spawn(config, tokenizer, Logger::stderr(), check, move || {
+        // Use the unchanged production M2 path. No second math pin,
+        // alternative loader, or CUDA initialization is introduced here.
+        //
+        // Important: the attached implementation of m2_route::open calls
+        // MathModePin::pin, whose visible audit-identity validation is a
+        // nonempty-string check. Stronger audit-artifact/lock validation
+        // is not implemented by those attached bytes. This adapter does
+        // not claim otherwise or silently substitute a different path.
+        let executor =
+            rustv1::m2_route::open(&args.model_dir, &args.manifest, 0, &args.audit_identity)
+                .map_err(|_| Code::InferenceFailed)?;
+        Ok(CudaBackend { executor })
+    })?;
+    service.wait_ready().await?;
 
-    let (tx, rx) = mpsc::channel(queue_capacity);
-    let poisoned_flag = Arc::new(AtomicBool::new(false));
-    let poisoned_worker = poisoned_flag.clone();
+    let control_task = match (control_listener, control_secret) {
+        (Some(listener), Some(secret)) => {
+            let app = service.app.clone();
+            Some(tokio::spawn(async move {
+                serve_control(listener, app, secret).await
+            }))
+        }
+        _ => None,
+    };
 
-    // Spawn dedicated OS thread for executor ownership (!Send + !Sync + MathModePin check)
-    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
-    thread::Builder::new()
-        .name("m3-executor-worker".into())
-        .spawn(move || {
-            let executor_res =
-                rustv1::m2_route::open(&model_dir, &manifest_path, 0, &audit_identity);
-            match executor_res {
-                Ok(executor) => {
-                    ready_tx.send(Ok(())).unwrap();
-                    run_worker(executor, rx, poisoned_worker);
-                }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e));
-                }
+    let (stop, stopped) = oneshot::channel();
+    let router = service.app.router();
+    let mut server = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = stopped.await;
+            })
+            .await
+    });
+
+    let normal_signal = tokio::select! {
+        result = termination() => result.is_ok(),
+        _ = &mut server => false,
+    };
+
+    // Admission closes before the listener's graceful-shutdown notification.
+    service.app.begin_drain();
+    let _ = stop.send(());
+    if let Some(task) = control_task {
+        task.abort();
+        let _ = task.await;
+    }
+
+    let shutdown = service.shutdown().await;
+    if shutdown.is_err() {
+        // The caller exits the process immediately. It must not await runtime
+        // destruction with a potentially stuck CUDA owner/blocking join.
+        server.abort();
+        return shutdown;
+    }
+
+    if normal_signal {
+        match timeout(grace, &mut server).await {
+            Ok(Ok(Ok(()))) => Ok(()),
+            _ => {
+                server.abort();
+                Err(Code::DeadlineExceeded)
             }
-        })?;
-
-    ready_rx.recv()??;
-
-    let state = AppState {
-        tx,
-        tokenizer: Arc::new(tokenizer),
-        vocab_size,
-        poisoned_flag,
-    };
-
-    let app = Router::new()
-        .route("/health/livez", get(livez))
-        .route("/health/readyz", get(readyz))
-        .route("/v1/embeddings", post(embeddings))
-        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    println!("serve_m3 listening on {bind_addr}");
-    axum::serve(listener, app).await?;
-
-    Ok(())
+        }
+    } else {
+        Err(Code::NotReady)
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-        routing::get,
-        Router,
+fn main() {
+    // No panic payload, raw error chain, CLI value, or path reaches stderr.
+    std::panic::set_hook(Box::new(|_| {}));
+
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(_) => std::process::exit(1),
     };
+    let result = runtime.block_on(run());
 
-    use serde_json::json;
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    };
-    use tokio::sync::mpsc;
-    use tower::ServiceExt;
-
-    // Direct re-tests of route parsing and state semantics
-    #[tokio::test]
-    async fn request_validation_matrix() {
-        // Unknown field test
-        let raw = json!({
-            "model": "nvidia/Nemotron-3-Embed-1B",
-            "input": "test text",
-            "mystery_field": true
-        });
-        let res: Result<super::EmbeddingRequest, _> = serde_json::from_value(raw);
-        assert!(res.is_err(), "unknown field must fail closed");
-
-        // Batch > 8 strings test
-        let raw = json!({
-            "model": "nvidia/Nemotron-3-Embed-1B",
-            "input": vec!["s"; 9]
-        });
-        let req: super::EmbeddingRequest = serde_json::from_value(raw).unwrap();
-        assert!(req.input.into_vec().is_err());
-
-        // Empty string in batch test
-        let raw = json!({
-            "model": "nvidia/Nemotron-3-Embed-1B",
-            "input": vec!["valid", "   "]
-        });
-        let req: super::EmbeddingRequest = serde_json::from_value(raw).unwrap();
-        assert!(req.input.into_vec().is_err());
+    if result.is_err() {
+        // In particular, do not block in Runtime::drop after a hard owner
+        // timeout. Process termination is the only recovery boundary.
+        std::process::exit(1);
     }
-
-    #[tokio::test]
-    async fn readyz_reports_poison_status() {
-        let poisoned = Arc::new(AtomicBool::new(false));
-        let (_tx, _rx) = mpsc::channel::<super::InferenceJob>(1);
-
-        // Dummy test router
-        let p_clone = poisoned.clone();
-        let app = Router::new().route(
-            "/health/readyz",
-            get(move || {
-                let p = p_clone.clone();
-                async move {
-                    if p.load(Ordering::Acquire) {
-                        (axum::http::StatusCode::SERVICE_UNAVAILABLE, "poisoned")
-                    } else {
-                        (axum::http::StatusCode::OK, "ready")
-                    }
-                }
-            }),
-        );
-
-        let res = app
-            .clone()
-            .oneshot(Request::get("/health/readyz").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
-
-        poisoned.store(true, Ordering::Release);
-        let res = app
-            .oneshot(Request::get("/health/readyz").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
-    }
+    runtime.shutdown_timeout(Duration::from_secs(1));
 }
