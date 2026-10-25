@@ -27,6 +27,14 @@ required-features = ["cuda"]
 name = "accept_m2"
 required-features = ["cuda"]
 
+[[bin]]
+name = "serve_m3"
+required-features = ["cuda"]
+
+[[bin]]
+name = "bench_m2_baseline"
+required-features = ["cuda"]
+
 [dependencies]
 anyhow = "1"
 axum = "0.8"
@@ -54,3 +62,6 @@ hyper-util = {
     version = "0.1",
     features = ["client", "client-legacy", "http1", "tokio"]
 }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
