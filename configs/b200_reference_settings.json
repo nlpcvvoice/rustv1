@@ -57,7 +57,7 @@
   "gpu_memory_utilization": 0.5,
   "load_format": "safetensors",
   "quantization": null,
-  "skip_tokenizer_init": true,
+  "skip_tokenizer_init": false,
   "attention_config": {
    "backend": "FLASH_ATTN",
    "flash_attn_version": 2
@@ -208,6 +208,11 @@
    "date": "2026-10-25",
    "change": "pooler_config: removed 'normalize' key (not a vllm 0.25.0 PoolerConfig field; verified via dataclass introspection on the pinned image). L2 normalization is enforced by the norm gate abs(norm-1)<=1e-5 in probe and capture.",
    "pending_ratification": "ASTRO6 (contract owner)"
+  },
+  {
+   "date": "2026-10-25",
+   "change": "skip_tokenizer_init true->false: vllm 0.25.0 embed API requires the tokenizer even for prompt_token_ids input; tokenizer is input-side only, numerics unchanged; token-ID round-trip still verified per call",
+   "pending_ratification": "ASTRO6"
   }
  ]
 }
