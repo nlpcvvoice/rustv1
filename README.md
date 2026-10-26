@@ -1,5 +1,7 @@
 # RustV1
 
+[![CI](https://github.com/nlpcvvoice/rustv1/actions/workflows/ci.yml/badge.svg)](https://github.com/nlpcvvoice/rustv1/actions/workflows/ci.yml)
+
 RustV1 is a model–hardware co-design reference implementation for Nemotron-class BF16 embedding inference using Candle and CUDA. It emphasizes an explicit precision contract, independently executed sequences, reproducible acceptance evidence, and fail-closed inference. The accepted CUDA route uses physical batch size one and validates numerical agreement with a frozen reference separately from exact output-bit identity across independent execution sequences.
 
 ## Repository layout
