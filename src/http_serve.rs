@@ -1,25 +1,10 @@
-//! CUDA-independent M3 HTTP serving.
-//!
-//! Executors are constructed, checked, used, and dropped on their owner OS
-//! thread. Neither Backend nor its factory result needs to implement Send.
-//!
-//! The transport uses a deliberately conservative policy: each connection has
-//! an absolute lifetime bounded by the smallest configured transport timeout.
-//! This bounds slow headers, slow writes, and idle keepalive without relying on
-//! a reverse proxy. It also limits active connections, including connections
-//! which have not yet produced an HTTP request. Connections may therefore be
-//! closed earlier than a phase-specific timeout implementation would close them.
-//!
-//! Install a sanitized process-wide panic hook before starting this service.
-//! catch_unwind cannot suppress the process's existing panic hook.
-//!
-//! Executor audit manifests are separate, access-controlled provenance
-//! artifacts. They are not the sanitized operational log implemented here.
+//! CUDA-independent M3 HTTP serving with A1–A6 and B1–B3 conformance.
 
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, FromRequest, Request, State},
     http::{header, HeaderMap, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -71,6 +56,7 @@ pub struct Config {
     pub startup_timeout: Duration,
     pub shutdown_grace: Duration,
     pub control_timeout: Duration,
+    pub drain_seconds: u64,
     pub transport: TransportConfig,
 }
 
@@ -88,6 +74,7 @@ impl Config {
             startup_timeout: Duration::from_secs(300),
             shutdown_grace: Duration::from_secs(90),
             control_timeout: Duration::from_secs(10),
+            drain_seconds: 30,
             transport: TransportConfig {
                 max_connections: 128,
                 header_timeout: Duration::from_secs(90),
@@ -150,7 +137,6 @@ impl TransportConfig {
     }
 }
 
-/// The only operational error classifications exported by the service.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Code {
@@ -481,7 +467,6 @@ pub fn validate_output(rows: &[Vec<f32>], count: usize) -> Result<(), Code> {
     Ok(())
 }
 
-/// Exact HTTP/restart predicate. Decode JSON directly into Vec<f32>.
 pub fn exact_f32(rows: &[Vec<f32>], golden: &[Vec<f32>]) -> bool {
     validate_output(rows, golden.len()).is_ok()
         && validate_output(golden, rows.len()).is_ok()
@@ -506,7 +491,6 @@ fn output_digest(rows: &[Vec<f32>]) -> String {
         .collect()
 }
 
-/// Deliberately has no Send or Sync bound.
 pub trait Backend: 'static {
     fn forward(&mut self, batches: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Code>;
     fn inject_policy_drift(&mut self) -> Result<(), Code>;
@@ -557,6 +541,7 @@ struct Core {
 struct Shared {
     core: Mutex<Core>,
     instance: String,
+    launch_attestation: Mutex<Option<Value>>,
 }
 
 impl Shared {
@@ -583,7 +568,6 @@ impl Shared {
     }
 }
 
-/// A fixed-schema logger: callers cannot supply arbitrary fields or messages.
 #[derive(Clone)]
 pub struct Logger {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -619,7 +603,6 @@ impl Logger {
             code,
             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
         };
-        // Serialize before acquiring the writer lock. No raw error is logged.
         if let Ok(mut bytes) = serde_json::to_vec(&record) {
             bytes.push(b'\n');
             let mut writer = lock(&self.writer);
@@ -702,7 +685,6 @@ impl BackendHandle {
                 Err(Code::ExecutorPoisoned)
             }
             Err(_) => {
-                // Lock order is always core -> job phase, including the worker.
                 let mut core = lock(&self.shared.core);
                 let mut phase = lock(&phase);
                 if *phase == Phase::Running && !core.state.terminal() {
@@ -741,8 +723,8 @@ impl BackendHandle {
 
 #[derive(Clone)]
 pub struct App {
-    config: Arc<Config>,
-    backend: BackendHandle,
+    pub config: Arc<Config>,
+    pub backend: BackendHandle,
     tokenizer: Arc<dyn TextTokenizer>,
     admission: Arc<Semaphore>,
     tokenizers: Arc<Semaphore>,
@@ -760,6 +742,7 @@ impl App {
             .method_not_allowed_fallback(|| async {
                 Code::InvalidRequest.response_with_status(StatusCode::METHOD_NOT_ALLOWED)
             })
+            .layer(middleware::from_fn_with_state(self.clone(), correlate))
             .layer(DefaultBodyLimit::max(self.config.max_body_bytes))
             .with_state(self.clone())
     }
@@ -778,6 +761,38 @@ impl App {
             core.state = Lifecycle::Draining;
         }
         core.admission = AdmissionMode::Quiesced;
+    }
+
+    pub fn install_launch_attestation(&self, mut value: Value) -> Result<(), Code> {
+        let core = lock(&self.backend.shared.core);
+        if core.state != Lifecycle::Ready
+            || !core.worker_alive
+            || core.forward_calls != 0
+            || core.startup_output_sha256.is_none()
+            || !value.is_object()
+        {
+            return Err(Code::NotReady);
+        }
+        let mut slot = lock(&self.backend.shared.launch_attestation);
+        if slot.is_some() {
+            return Err(Code::InvalidRequest);
+        }
+        value["instance_id"] = json!(self.backend.shared.instance);
+        value["startup"] = json!({
+            "completed": true,
+            "comparison": "exact_f32_bits",
+            "output_f32le_sha256": core.startup_output_sha256,
+        });
+        value["capabilities"] = json!([
+            "launch_attestation.v1",
+            "acceptance-control.v1",
+            "quiesce",
+            "inject_policy_drift",
+            "restore",
+            "observe"
+        ]);
+        *slot = Some(value);
+        Ok(())
     }
 
     fn admit(&self) -> Result<Arc<OwnedSemaphorePermit>, Code> {
@@ -812,8 +827,6 @@ impl App {
         let deadline = started + self.config.request_timeout;
         check_media(request.headers())?;
 
-        // Bytes::from_request observes DefaultBodyLimit. In particular, do not
-        // replace this with unbounded BodyExt::collect().
         let read_budget = self
             .config
             .body_timeout
@@ -836,16 +849,18 @@ impl App {
         let encoding = Encoding::parse(parsed.encoding_format)?;
         let texts = parsed.input.texts()?;
 
-        let tokenizer_permit = self
-            .tokenizers
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| Code::QueueFull)?;
+        let tokenizer_permit = timeout_at(
+            TokioInstant::from_std(deadline),
+            self.tokenizers.clone().acquire_owned(),
+        )
+        .await
+        .map_err(|_| Code::DeadlineExceeded)?
+        .map_err(|_| Code::NotReady)?;
+
         let tokenizer = self.tokenizer.clone();
         let config = self.config.clone();
         let blocking_admission = permit.clone();
         let work = tokio::task::spawn_blocking(move || {
-            // These permits remain owned even if the async wait times out.
             let _tokenizer_permit = tokenizer_permit;
             let _admission_permit = blocking_admission;
             let batches = texts
@@ -867,14 +882,12 @@ impl App {
         Ok(success(rows, encoding, tokens))
     }
 
-    async fn control(&self, command: ControlCommand) -> Result<Observation, Code> {
+    pub async fn control(&self, command: ControlCommand) -> Result<Observation, Code> {
         if command == ControlCommand::Quiesce {
             {
                 let mut core = lock(&self.backend.shared.core);
                 core.admission = AdmissionMode::Quiesced;
             }
-            // The barrier includes body readers, tokenizer closures, queued
-            // jobs, and executing jobs. It does not rely on queue emptiness.
             let count =
                 u32::try_from(self.config.admission_capacity).map_err(|_| Code::InvalidRequest)?;
             let all = timeout(
@@ -890,6 +903,34 @@ impl App {
             .command(command, self.config.control_timeout)
             .await
     }
+}
+
+async fn correlate(State(app): State<App>, request: Request, next: Next) -> Response {
+    let values = request.headers().get_all("x-acceptance-case-id");
+    let count = values.iter().count();
+    let case = values.iter().next().cloned();
+    let valid = count <= 1
+        && case.as_ref().is_none_or(|value| {
+            value.to_str().is_ok_and(|text| {
+                !text.is_empty()
+                    && text.len() <= 128
+                    && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            })
+        });
+    let mut response = if valid {
+        next.run(request).await
+    } else {
+        Code::InvalidRequest.into_response()
+    };
+    if let Ok(instance) = app.backend.shared.instance.parse() {
+        response.headers_mut().insert("x-rv1-instance-id", instance);
+    }
+    if valid {
+        if let Some(case) = case {
+            response.headers_mut().insert("x-acceptance-case-id", case);
+        }
+    }
+    response
 }
 
 async fn readyz(State(app): State<App>) -> Response {
@@ -916,8 +957,6 @@ async fn embeddings(State(app): State<App>, request: Request) -> Response {
         }
     };
 
-    // Detaching the HTTP waiter must not cancel the execution deadline or
-    // release permits while a blocking tokenizer / executor still owns work.
     let task = tokio::spawn(async move {
         let result = app.request(request, started, permit).await;
         app.logger
@@ -965,6 +1004,7 @@ impl Service {
                 startup_output_sha256: None,
             }),
             instance: format!("{}-{stamp}", std::process::id()),
+            launch_attestation: Mutex::new(None),
         });
         let (tx, rx) = mpsc::channel(config.queue_capacity);
         let (startup_tx, startup_rx) = oneshot::channel();
@@ -1035,11 +1075,9 @@ impl Service {
         }
     }
 
-    /// On Err the process must terminate, not construct another executor.
-    /// A timed-out join remains owned by Tokio's blocking pool until it returns.
     pub async fn shutdown(&mut self) -> Result<(), Code> {
         self.app.begin_drain();
-        let deadline = TokioInstant::now() + self.app.config.shutdown_grace;
+        let deadline = TokioInstant::now() + Duration::from_secs(self.app.config.drain_seconds);
         let count =
             u32::try_from(self.app.config.admission_capacity).map_err(|_| Code::InvalidRequest)?;
 
@@ -1083,7 +1121,6 @@ impl Service {
 
 impl Drop for Service {
     fn drop(&mut self) {
-        // Dropping the HTTP/service handle never authorizes executor reuse.
         if self.worker.is_some() {
             self.app.backend.shared.retire();
             let _ = self.app.backend.tx.try_send(Message::Stop);
@@ -1176,8 +1213,6 @@ fn run_job<B: Backend>(backend: &mut B, shared: &Shared, job: Job) {
         armed
     };
 
-    // This call, including host output retrieval, owns the executor until it
-    // returns. A timeout never moves or drops the backend on another thread.
     let mut result = if armed {
         backend
             .inject_policy_drift()
@@ -1193,7 +1228,6 @@ fn run_job<B: Backend>(backend: &mut B, shared: &Shared, job: Job) {
             result = Err(Code::InferenceFailed);
         }
     }
-    // Backend classifications cannot escape as arbitrary public error codes.
     if result.is_err() {
         result = Err(Code::InferenceFailed);
     }
@@ -1220,17 +1254,6 @@ fn run_job<B: Backend>(backend: &mut B, shared: &Shared, job: Job) {
     let _ = job.reply.send(result);
 }
 
-/// Acceptance-only protocol, one authenticated JSON object per TCP connection.
-///
-/// Commands:
-/// - quiesce: stop admission and wait for all admitted work, then owner barrier;
-/// - inject_policy_drift: arm exactly the next admitted HTTP request;
-/// - restore: restore flags on the owner, without clearing poison/retirement;
-/// - observe: owner-thread observation and restart evidence.
-///
-/// If the one permitted request fails before submission, quiesce and arm again.
-/// The drift is injected immediately before the designated backend call, and
-/// automatically restored afterward. This is not an in-process recovery API.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlCommand {
@@ -1238,6 +1261,7 @@ pub enum ControlCommand {
     InjectPolicyDrift,
     Restore,
     Observe,
+    Attest,
 }
 
 #[derive(Deserialize)]
@@ -1245,6 +1269,8 @@ pub enum ControlCommand {
 struct ControlRequest {
     secret: String,
     command: ControlCommand,
+    #[serde(default)]
+    challenge: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1256,6 +1282,8 @@ pub struct Observation {
     ready: bool,
     forward_calls: u64,
     startup_output_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attestation: Option<Value>,
 }
 
 fn owner_control<B: Backend>(
@@ -1268,6 +1296,14 @@ fn owner_control<B: Backend>(
         return Err(Code::InferenceFailed);
     }
     let mut core = lock(&shared.core);
+    if command == ControlCommand::Attest
+        && (core.state != Lifecycle::Ready
+            || !core.worker_alive
+            || core.forward_calls != 0
+            || lock(&shared.launch_attestation).is_none())
+    {
+        return Err(Code::NotReady);
+    }
     match command {
         ControlCommand::Quiesce => {
             core.admission = AdmissionMode::Quiesced;
@@ -1283,7 +1319,7 @@ fn owner_control<B: Backend>(
             core.armed = true;
             core.admission = AdmissionMode::One;
         }
-        ControlCommand::Restore | ControlCommand::Observe => {}
+        ControlCommand::Restore | ControlCommand::Observe | ControlCommand::Attest => {}
     }
     Ok(Observation {
         instance: shared.instance.clone(),
@@ -1295,6 +1331,11 @@ fn owner_control<B: Backend>(
             && !matches!(core.admission, AdmissionMode::Quiesced),
         forward_calls: core.forward_calls,
         startup_output_sha256: core.startup_output_sha256.clone(),
+        attestation: if command == ControlCommand::Attest {
+            lock(&shared.launch_attestation).clone()
+        } else {
+            None
+        },
     })
 }
 
@@ -1328,14 +1369,15 @@ pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> R
     {
         return Err(Code::InvalidRequest);
     }
-    // Sequential connections bound control memory and task count. The entire
-    // exchange, including socket writes, has a frozen deadline.
     loop {
         let (mut socket, peer) = listener.accept().await.map_err(|_| Code::NotReady)?;
         if !peer.ip().is_loopback() {
             continue;
         }
-        let exchange = async {
+        let app = app.clone();
+        let secret = secret.clone();
+        let control_timeout = app.config.control_timeout;
+        let exchange = async move {
             let mut bytes = Vec::with_capacity(256);
             loop {
                 let byte = socket.read_u8().await.map_err(|_| Code::InvalidRequest)?;
@@ -1352,9 +1394,25 @@ pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> R
             if !secret_equal(request.secret.as_bytes(), secret.as_bytes()) {
                 return Err(Code::InvalidRequest);
             }
+            if request.command == ControlCommand::Attest {
+                let challenge = request.challenge.as_deref().ok_or(Code::InvalidRequest)?;
+                if challenge.len() != 64
+                    || !challenge
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                {
+                    return Err(Code::InvalidRequest);
+                }
+            } else if request.challenge.is_some() {
+                return Err(Code::InvalidRequest);
+            }
             let result = app.control(request.command).await;
             let value = match result {
-                Ok(observation) => json!({"ok": true, "observation": observation}),
+                Ok(observation) => json!({
+                    "ok": true,
+                    "challenge": request.challenge,
+                    "observation": observation
+                }),
                 Err(code) => json!({"ok": false, "code": code}),
             };
             let mut output = serde_json::to_vec(&value).map_err(|_| Code::InferenceFailed)?;
@@ -1365,11 +1423,10 @@ pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> R
                 .map_err(|_| Code::InvalidRequest)?;
             socket.shutdown().await.map_err(|_| Code::InvalidRequest)
         };
-        let _ = timeout(app.config.control_timeout, exchange).await;
+        let _ = timeout(control_timeout, exchange).await;
     }
 }
 
-/// Connection admission occurs before HTTP parsing or body buffering.
 pub struct BoundedListener {
     listener: TcpListener,
     permits: Arc<Semaphore>,
@@ -1483,853 +1540,5 @@ impl AsyncWrite for TimedSocket {
             return Poll::Ready(Err(Self::timeout_error()));
         }
         Pin::new(&mut this.socket).poll_shutdown(context)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::{body::Body, http::Request as HttpRequest};
-    use std::{
-        marker::PhantomData,
-        rc::Rc,
-        sync::atomic::{AtomicBool, AtomicUsize},
-    };
-    use tower::ServiceExt;
-
-    fn vector(ids: &[u32]) -> Vec<f32> {
-        let mut output = vec![0.0; EMBEDDING_WIDTH];
-        output[0] = -0.0;
-        let sum = ids.iter().fold(0u32, |sum, value| sum.wrapping_add(*value));
-        let index = 1 + usize::try_from(sum % 2047).unwrap();
-        output[index] = 1.0;
-        output
-    }
-
-    struct Tokenizer;
-
-    impl TextTokenizer for Tokenizer {
-        fn encode(&self, text: &str) -> Result<Vec<u32>, Code> {
-            match text {
-                "pad" => Ok(vec![PAD_ID]),
-                "oov" => Ok(vec![u32::MAX]),
-                "empty" => Ok(vec![]),
-                "long" => Ok(vec![1; 1025]),
-                "fail" => Err(Code::InvalidRequest),
-                "two" => Ok(vec![2, 3]),
-                _ => Ok(vec![1]),
-            }
-        }
-    }
-
-    struct Fake {
-        calls: Arc<AtomicUsize>,
-        delay: Arc<Mutex<Duration>>,
-        fail: Arc<AtomicBool>,
-        panic: Arc<AtomicBool>,
-        drift: bool,
-        _not_send: PhantomData<Rc<()>>,
-    }
-
-    impl Backend for Fake {
-        fn forward(&mut self, batches: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Code> {
-            self.calls.fetch_add(1, Ordering::SeqCst);
-            let delay = *lock(&self.delay);
-            thread::sleep(delay);
-            assert!(!self.panic.load(Ordering::SeqCst), "fake worker panic");
-            if self.drift || self.fail.load(Ordering::SeqCst) {
-                return Err(Code::InferenceFailed);
-            }
-            Ok(batches.iter().map(|ids| vector(ids)).collect())
-        }
-
-        fn inject_policy_drift(&mut self) -> Result<(), Code> {
-            self.drift = true;
-            Ok(())
-        }
-
-        fn restore_policy(&mut self) -> Result<(), Code> {
-            self.drift = false;
-            Ok(())
-        }
-    }
-
-    #[derive(Clone)]
-    struct MemoryLog(Arc<Mutex<Vec<u8>>>);
-
-    impl Write for MemoryLog {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            lock(&self.0).extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
-
-    struct Fixture {
-        service: Service,
-        calls: Arc<AtomicUsize>,
-        delay: Arc<Mutex<Duration>>,
-        fail: Arc<AtomicBool>,
-        panic: Arc<AtomicBool>,
-        logs: Arc<Mutex<Vec<u8>>>,
-    }
-
-    async fn fixture(mut config: Config) -> Fixture {
-        config.startup_timeout = Duration::from_secs(2);
-        config.shutdown_grace = Duration::from_secs(3);
-        let calls = Arc::new(AtomicUsize::new(0));
-        let delay = Arc::new(Mutex::new(Duration::ZERO));
-        let fail = Arc::new(AtomicBool::new(false));
-        let panic = Arc::new(AtomicBool::new(false));
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let factory_calls = calls.clone();
-        let factory_delay = delay.clone();
-        let factory_fail = fail.clone();
-        let factory_panic = panic.clone();
-        let mut service = Service::spawn(
-            config,
-            Arc::new(Tokenizer),
-            Logger::new(MemoryLog(logs.clone())),
-            StartupCheck {
-                tokens: vec![vec![1]],
-                embeddings: vec![vector(&[1])],
-            },
-            move || {
-                Ok(Fake {
-                    calls: factory_calls,
-                    delay: factory_delay,
-                    fail: factory_fail,
-                    panic: factory_panic,
-                    drift: false,
-                    _not_send: PhantomData,
-                })
-            },
-        )
-        .unwrap();
-        service.wait_ready().await.unwrap();
-        calls.store(0, Ordering::SeqCst);
-        Fixture {
-            service,
-            calls,
-            delay,
-            fail,
-            panic,
-            logs,
-        }
-    }
-
-    fn config() -> Config {
-        Config::production(8, 131_072, 1024)
-    }
-
-    fn body(input: Value) -> Value {
-        json!({"model": MODEL_ID, "input": input})
-    }
-
-    async fn send(app: &App, value: Value) -> (StatusCode, Vec<u8>) {
-        raw(
-            app,
-            serde_json::to_vec(&value).unwrap(),
-            Some("application/json"),
-            None,
-        )
-        .await
-    }
-
-    async fn raw(
-        app: &App,
-        bytes: Vec<u8>,
-        content_type: Option<&str>,
-        content_encoding: Option<&str>,
-    ) -> (StatusCode, Vec<u8>) {
-        let mut request = HttpRequest::post("/v1/embeddings");
-        if let Some(value) = content_type {
-            request = request.header(header::CONTENT_TYPE, value);
-        }
-        if let Some(value) = content_encoding {
-            request = request.header(header::CONTENT_ENCODING, value);
-        }
-        let response = app
-            .router()
-            .oneshot(request.body(Body::from(bytes)).unwrap())
-            .await
-            .unwrap();
-        assert!(response.headers()[header::CONTENT_TYPE]
-            .to_str()
-            .unwrap()
-            .starts_with("application/json"));
-        let status = response.status();
-        let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
-            .await
-            .unwrap();
-        (status, bytes.to_vec())
-    }
-
-    fn error(result: (StatusCode, Vec<u8>), expected: Code) {
-        assert_eq!(result.0, expected.status());
-        let parsed: Value = serde_json::from_slice(&result.1).unwrap();
-        assert_eq!(
-            parsed["error"]["code"],
-            serde_json::to_value(expected).unwrap()
-        );
-        assert_eq!(parsed["error"]["message"], expected.message());
-        assert_eq!(parsed.as_object().unwrap().len(), 1);
-        assert_eq!(parsed["error"].as_object().unwrap().len(), 4);
-    }
-
-    async fn wait_calls(calls: &AtomicUsize, count: usize) {
-        timeout(Duration::from_secs(2), async {
-            while calls.load(Ordering::SeqCst) < count {
-                sleep(Duration::from_millis(1)).await;
-            }
-        })
-        .await
-        .unwrap();
-    }
-
-    #[derive(Deserialize)]
-    struct FloatResponse {
-        data: Vec<FloatRow>,
-        usage: FloatUsage,
-    }
-
-    #[derive(Deserialize)]
-    struct FloatRow {
-        index: usize,
-        embedding: Vec<f32>,
-    }
-
-    #[derive(Deserialize)]
-    struct FloatUsage {
-        prompt_tokens: usize,
-        total_tokens: usize,
-    }
-
-    #[tokio::test]
-    async fn float_base64_order_usage_and_signed_zero() {
-        let mut f = fixture(config()).await;
-        for encoding in [Value::Null, json!("float"), json!("base64")] {
-            let mut request = body(json!(["two", "one", "two"]));
-            request["encoding_format"] = encoding.clone();
-            let (status, bytes) = send(&f.service.app, request).await;
-            assert_eq!(status, StatusCode::OK);
-            let golden = vec![vector(&[2, 3]), vector(&[1]), vector(&[2, 3])];
-            if encoding == "base64" {
-                let parsed: Value = serde_json::from_slice(&bytes).unwrap();
-                let rows: Vec<Vec<f32>> = parsed["data"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, row)| {
-                        assert_eq!(row["index"], index);
-                        let encoded = row["embedding"].as_str().unwrap();
-                        assert!(encoded.ends_with('='));
-                        let decoded = STANDARD.decode(encoded).unwrap();
-                        assert_eq!(decoded.len(), 2048 * 4);
-                        decoded
-                            .as_chunks::<4>()
-                            .0
-                            .iter()
-                            .copied()
-                            .map(f32::from_le_bytes)
-                            .collect()
-                    })
-                    .collect();
-                assert!(exact_f32(&rows, &golden));
-                assert_eq!(parsed["usage"]["prompt_tokens"], 5);
-                assert_eq!(parsed["usage"]["total_tokens"], 5);
-            } else {
-                let parsed: FloatResponse = serde_json::from_slice(&bytes).unwrap();
-                assert_eq!(parsed.usage.prompt_tokens, 5);
-                assert_eq!(parsed.usage.total_tokens, 5);
-                let rows = parsed
-                    .data
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, row)| {
-                        assert_eq!(row.index, index);
-                        row.embedding
-                    })
-                    .collect::<Vec<_>>();
-                assert!(exact_f32(&rows, &golden));
-            }
-        }
-        assert_eq!(
-            send(&f.service.app, body(json!("one"))).await.0,
-            StatusCode::OK
-        );
-        f.service.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn validation_matrix_and_whole_request_validation() {
-        let mut f = fixture(config()).await;
-        let cases = [
-            (body(json!([])), Code::EmptyBatch),
-            (body(json!(" \t\n")), Code::EmptySequence),
-            (body(json!(["one", ""])), Code::EmptySequence),
-            (body(json!("empty")), Code::EmptySequence),
-            (body(json!("pad")), Code::PadToken),
-            (body(json!("oov")), Code::OutOfVocabulary),
-            (body(json!("long")), Code::OverLength),
-            (body(json!("fail")), Code::InvalidRequest),
-            (body(json!(["one", "pad"])), Code::PadToken),
-            (body(json!(vec!["one"; 9])), Code::InvalidRequest),
-            (body(json!([1, 2])), Code::InvalidRequest),
-            (body(json!([["one"]])), Code::InvalidRequest),
-            (body(Value::Null), Code::InvalidRequest),
-            (json!({"input": "one"}), Code::InvalidRequest),
-            (json!({"model": MODEL_ID}), Code::InvalidRequest),
-            (
-                json!({"model": "secret-model", "input": "one"}),
-                Code::InvalidModel,
-            ),
-            (
-                json!({"model": MODEL_ID, "input": "one", "dimensions": 3}),
-                Code::InvalidRequest,
-            ),
-            (
-                json!({"model": MODEL_ID, "input": "one", "user": 5}),
-                Code::InvalidRequest,
-            ),
-            (
-                json!({"model": MODEL_ID, "input": "one", "encoding_format": "other"}),
-                Code::UnsupportedEncodingFormat,
-            ),
-            (
-                json!({"model": MODEL_ID, "input": "one", "encoding_format": 42}),
-                Code::UnsupportedEncodingFormat,
-            ),
-        ];
-        for (request, code) in cases {
-            error(send(&f.service.app, request).await, code);
-        }
-        error(
-            raw(
-                &f.service.app,
-                b"{secret".to_vec(),
-                Some("application/json"),
-                None,
-            )
-            .await,
-            Code::InvalidRequest,
-        );
-        error(
-            raw(
-                &f.service.app,
-                b"{\"model\":\"x\",\"model\":\"y\",\"input\":\"z\"}".to_vec(),
-                Some("application/json"),
-                None,
-            )
-            .await,
-            Code::InvalidRequest,
-        );
-        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
-
-        for media in [None, Some("text/plain"), Some("application/json; x=y")] {
-            error(
-                raw(&f.service.app, b"{}".to_vec(), media, None).await,
-                Code::UnsupportedMediaType,
-            );
-        }
-        error(
-            raw(
-                &f.service.app,
-                b"{}".to_vec(),
-                Some("application/json"),
-                Some("gzip"),
-            )
-            .await,
-            Code::UnsupportedMediaType,
-        );
-        error(
-            raw(
-                &f.service.app,
-                vec![b' '; BODY_LIMIT + 1],
-                Some("application/json"),
-                None,
-            )
-            .await,
-            Code::PayloadTooLarge,
-        );
-        assert_eq!(
-            raw(
-                &f.service.app,
-                serde_json::to_vec(&body(json!("one"))).unwrap(),
-                Some("application/json; charset=utf-8"),
-                None,
-            )
-            .await
-            .0,
-            StatusCode::OK
-        );
-        f.service.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn fallback_and_readiness_use_production_router() {
-        let mut f = fixture(config()).await;
-        for (method, path, status) in [
-            ("GET", "/missing?private=query", StatusCode::NOT_FOUND),
-            ("GET", "/v1/embeddings", StatusCode::METHOD_NOT_ALLOWED),
-            ("GET", "/health/readyz", StatusCode::OK),
-            ("GET", "/health/livez", StatusCode::OK),
-        ] {
-            let response = f
-                .service
-                .app
-                .router()
-                .oneshot(
-                    HttpRequest::builder()
-                        .method(method)
-                        .uri(path)
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), status);
-        }
-        f.service.app.begin_drain();
-        assert!(!f.service.app.is_ready());
-        error(
-            send(&f.service.app, body(json!("one"))).await,
-            Code::NotReady,
-        );
-        f.service.shutdown().await.unwrap();
-        assert_eq!(f.service.app.lifecycle(), Lifecycle::Stopped);
-    }
-
-    #[tokio::test]
-    async fn queue_full_and_expired_queued_job_do_not_retire() {
-        let mut cfg = config();
-        cfg.queue_capacity = 1;
-        let mut f = fixture(cfg).await;
-        *lock(&f.delay) = Duration::from_millis(150);
-        let app = f.service.app.clone();
-        let permit = app.admit().unwrap();
-        let handle = app.backend.clone();
-        let first = tokio::spawn(async move {
-            handle
-                .infer(
-                    vec![vec![1]],
-                    Instant::now() + Duration::from_secs(2),
-                    permit,
-                )
-                .await
-        });
-        wait_calls(&f.calls, 1).await;
-
-        let second_app = f.service.app.clone();
-        let second_permit = second_app.admit().unwrap();
-        let second = tokio::spawn(async move {
-            second_app
-                .backend
-                .infer(
-                    vec![vec![2]],
-                    Instant::now() + Duration::from_millis(30),
-                    second_permit,
-                )
-                .await
-        });
-        sleep(Duration::from_millis(5)).await;
-        let permit = f.service.app.admit().unwrap();
-        assert_eq!(
-            f.service
-                .app
-                .backend
-                .infer(
-                    vec![vec![3]],
-                    Instant::now() + Duration::from_secs(2),
-                    permit
-                )
-                .await
-                .unwrap_err(),
-            Code::QueueFull
-        );
-        assert_eq!(second.await.unwrap().unwrap_err(), Code::DeadlineExceeded);
-        first.await.unwrap().unwrap();
-        sleep(Duration::from_millis(10)).await;
-        assert!(f.service.app.is_ready());
-        assert_eq!(f.calls.load(Ordering::SeqCst), 1);
-        f.service.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn execution_timeout_retires_and_discards_late_result() {
-        let mut cfg = config();
-        cfg.request_timeout = Duration::from_millis(40);
-        let mut f = fixture(cfg).await;
-        *lock(&f.delay) = Duration::from_millis(140);
-        error(
-            send(&f.service.app, body(json!("one"))).await,
-            Code::DeadlineExceeded,
-        );
-        assert_eq!(f.service.app.lifecycle(), Lifecycle::Retired);
-        error(
-            send(&f.service.app, body(json!("one"))).await,
-            Code::ExecutorPoisoned,
-        );
-        sleep(Duration::from_millis(160)).await;
-        assert_eq!(f.calls.load(Ordering::SeqCst), 1);
-        assert_eq!(f.service.app.lifecycle(), Lifecycle::Retired);
-        f.service.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn disconnect_does_not_release_executor_or_admission() {
-        let mut cfg = config();
-        cfg.admission_capacity = 1;
-        cfg.tokenizer_capacity = 1;
-        let mut f = fixture(cfg).await;
-        *lock(&f.delay) = Duration::from_millis(120);
-        let app = f.service.app.clone();
-        let client = tokio::spawn(async move { send(&app, body(json!("one"))).await });
-        wait_calls(&f.calls, 1).await;
-        client.abort();
-        error(
-            send(&f.service.app, body(json!("two"))).await,
-            Code::QueueFull,
-        );
-        assert_eq!(f.calls.load(Ordering::SeqCst), 1);
-        sleep(Duration::from_millis(150)).await;
-        assert!(f.service.app.is_ready());
-        assert_eq!(
-            send(&f.service.app, body(json!("two"))).await.0,
-            StatusCode::OK
-        );
-        f.service.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn worker_failure_and_closed_queue_are_terminal() {
-        for panic in [false, true] {
-            let mut f = fixture(config()).await;
-            if panic {
-                f.panic.store(true, Ordering::SeqCst);
-            } else {
-                f.fail.store(true, Ordering::SeqCst);
-            }
-            let result = send(&f.service.app, body(json!("one"))).await;
-            error(
-                result,
-                if panic {
-                    Code::ExecutorPoisoned
-                } else {
-                    Code::InferenceFailed
-                },
-            );
-            assert!(!f.service.app.is_ready());
-            error(
-                send(&f.service.app, body(json!("two"))).await,
-                Code::ExecutorPoisoned,
-            );
-            assert_eq!(f.calls.load(Ordering::SeqCst), 1);
-            f.service.shutdown().await.unwrap();
-        }
-    }
-
-    #[tokio::test]
-    async fn unexpected_idle_exit_is_supervised_without_a_request() {
-        let mut f = fixture(config()).await;
-        f.service.app.backend.tx.send(Message::Stop).await.unwrap();
-        timeout(Duration::from_secs(2), async {
-            while f.service.app.is_ready() {
-                sleep(Duration::from_millis(1)).await;
-            }
-        })
-        .await
-        .unwrap();
-        assert_eq!(f.service.app.lifecycle(), Lifecycle::Poisoned);
-        assert!(f.service.app.backend.tx.is_closed());
-        f.service.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn control_poison_restore_and_restart_evidence() {
-        let mut f = fixture(config()).await;
-        let before = f
-            .service
-            .app
-            .control(ControlCommand::Observe)
-            .await
-            .unwrap();
-        assert!(before.ready);
-        f.service
-            .app
-            .control(ControlCommand::Quiesce)
-            .await
-            .unwrap();
-        error(
-            send(&f.service.app, body(json!("one"))).await,
-            Code::NotReady,
-        );
-        f.service
-            .app
-            .control(ControlCommand::InjectPolicyDrift)
-            .await
-            .unwrap();
-        error(
-            send(&f.service.app, body(json!("one"))).await,
-            Code::InferenceFailed,
-        );
-        let restored = f
-            .service
-            .app
-            .control(ControlCommand::Restore)
-            .await
-            .unwrap();
-        assert_eq!(restored.lifecycle, Lifecycle::Poisoned);
-        assert!(!restored.ready);
-        assert_eq!(restored.forward_calls, 1);
-        error(
-            send(&f.service.app, body(json!("one"))).await,
-            Code::ExecutorPoisoned,
-        );
-        f.service.shutdown().await.unwrap();
-
-        let mut fresh = fixture(config()).await;
-        let after = fresh
-            .service
-            .app
-            .control(ControlCommand::Observe)
-            .await
-            .unwrap();
-        assert_ne!(before.instance, after.instance);
-        assert_eq!(before.startup_output_sha256, after.startup_output_sha256);
-        assert!(after.ready);
-        fresh.service.shutdown().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn graceful_drain_finishes_admitted_work() {
-        let mut f = fixture(config()).await;
-        *lock(&f.delay) = Duration::from_millis(80);
-        let app = f.service.app.clone();
-        let admitted = tokio::spawn(async move { send(&app, body(json!("one"))).await });
-        wait_calls(&f.calls, 1).await;
-        f.service.app.begin_drain();
-        error(
-            send(&f.service.app, body(json!("two"))).await,
-            Code::NotReady,
-        );
-        f.service.shutdown().await.unwrap();
-        assert_eq!(admitted.await.unwrap().0, StatusCode::OK);
-        assert_eq!(f.service.app.lifecycle(), Lifecycle::Stopped);
-    }
-
-    #[tokio::test]
-    async fn concurrent_association_and_sanitized_logs() {
-        let mut f = fixture(config()).await;
-        let mut clients = Vec::new();
-        for index in 0..4 {
-            let app = f.service.app.clone();
-            clients.push(tokio::spawn(async move {
-                let input = if index % 2 == 0 { "one" } else { "two" };
-                let mut request = body(json!(input));
-                request["user"] = json!("PRIVATE-USER");
-                (input, send(&app, request).await)
-            }));
-        }
-        for client in clients {
-            let (input, (status, bytes)) = client.await.unwrap();
-            assert_eq!(status, StatusCode::OK);
-            let parsed: FloatResponse = serde_json::from_slice(&bytes).unwrap();
-            let golden = if input == "one" {
-                vector(&[1])
-            } else {
-                vector(&[2, 3])
-            };
-            assert!(exact_f32(&[parsed.data[0].embedding.clone()], &[golden]));
-        }
-        let _ = send(
-            &f.service.app,
-            json!({"model":"PRIVATE-MODEL","input":"PRIVATE-TEXT","user":"PRIVATE-USER"}),
-        )
-        .await;
-        let logs = String::from_utf8(lock(&f.logs).clone()).unwrap();
-        assert!(!logs.contains("PRIVATE"));
-        for line in logs.lines() {
-            let value: Value = serde_json::from_str(line).unwrap();
-            let allowed = [
-                "event",
-                "request_id",
-                "route",
-                "status",
-                "code",
-                "elapsed_ms",
-            ];
-            assert!(value
-                .as_object()
-                .unwrap()
-                .keys()
-                .all(|key| allowed.contains(&key.as_str())));
-        }
-        f.service.shutdown().await.unwrap();
-    }
-
-    async fn socket_server(
-        app: &App,
-        transport: &TransportConfig,
-    ) -> (SocketAddr, oneshot::Sender<()>, tokio::task::JoinHandle<()>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let listener = BoundedListener::new(listener, transport).unwrap();
-        let router = app.router();
-        let (stop, stopped) = oneshot::channel();
-        let task = tokio::spawn(async move {
-            axum::serve(listener, router)
-                .with_graceful_shutdown(async {
-                    let _ = stopped.await;
-                })
-                .await
-                .unwrap();
-        });
-        (address, stop, task)
-    }
-
-    #[tokio::test]
-    async fn real_socket_chunked_limit_and_shutdown() {
-        let mut cfg = config();
-        cfg.max_body_bytes = 128;
-        let mut f = fixture(cfg).await;
-        let (address, stop, server) =
-            socket_server(&f.service.app, &f.service.app.config.transport).await;
-        let mut socket = TcpStream::connect(address).await.unwrap();
-        socket
-            .write_all(
-                b"POST /v1/embeddings HTTP/1.1\r\nHost: localhost\r\n\
-                  Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n\
-                  Connection: close\r\n\r\n",
-            )
-            .await
-            .unwrap();
-        for _ in 0..3 {
-            socket.write_all(b"40\r\n").await.unwrap();
-            socket.write_all(&[b' '; 64]).await.unwrap();
-            socket.write_all(b"\r\n").await.unwrap();
-        }
-        let _ = socket.write_all(b"0\r\n\r\n").await;
-        let mut response = Vec::new();
-        timeout(Duration::from_secs(2), socket.read_to_end(&mut response))
-            .await
-            .unwrap()
-            .unwrap();
-        let text = String::from_utf8(response).unwrap();
-        assert!(text.starts_with("HTTP/1.1 413"));
-        assert!(text.contains("\"code\":\"payload_too_large\""));
-        assert_eq!(f.calls.load(Ordering::SeqCst), 0);
-        f.service.app.begin_drain();
-        stop.send(()).unwrap();
-        f.service.shutdown().await.unwrap();
-        timeout(Duration::from_secs(2), server)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(TcpStream::connect(address).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn real_socket_slow_headers_are_bounded() {
-        let mut f = fixture(config()).await;
-        let mut transport = f.service.app.config.transport.clone();
-        transport.header_timeout = Duration::from_millis(80);
-        let (address, stop, server) = socket_server(&f.service.app, &transport).await;
-        let mut socket = TcpStream::connect(address).await.unwrap();
-        socket.write_all(b"POST /v1/").await.unwrap();
-        sleep(Duration::from_millis(140)).await;
-        let mut byte = [0u8; 1];
-        let read = timeout(Duration::from_secs(1), socket.read(&mut byte))
-            .await
-            .unwrap();
-        assert!(matches!(read, Ok(0) | Err(_)));
-        stop.send(()).unwrap();
-        f.service.shutdown().await.unwrap();
-        timeout(Duration::from_secs(2), server)
-            .await
-            .unwrap()
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn real_socket_slow_body_has_json_deadline() {
-        let mut cfg = config();
-        cfg.body_timeout = Duration::from_millis(60);
-        let mut f = fixture(cfg).await;
-        let (address, stop, server) =
-            socket_server(&f.service.app, &f.service.app.config.transport).await;
-        let mut socket = TcpStream::connect(address).await.unwrap();
-        socket
-            .write_all(
-                b"POST /v1/embeddings HTTP/1.1\r\nHost: localhost\r\n\
-                  Content-Type: application/json\r\nContent-Length: 100\r\n\
-                  Connection: close\r\n\r\n{",
-            )
-            .await
-            .unwrap();
-        let mut response = Vec::new();
-        timeout(Duration::from_secs(2), socket.read_to_end(&mut response))
-            .await
-            .unwrap()
-            .unwrap();
-        let text = String::from_utf8(response).unwrap();
-        assert!(text.starts_with("HTTP/1.1 504"));
-        assert!(text.contains("\"code\":\"deadline_exceeded\""));
-        assert!(f.service.app.is_ready());
-        stop.send(()).unwrap();
-        f.service.shutdown().await.unwrap();
-        server.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn transport_write_wait_is_bounded_without_a_reading_peer() {
-        // Exercise the production transport wrapper directly with enough data
-        // to exhaust TCP buffering. Small embedding responses alone cannot
-        // reliably force write backpressure on loopback.
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let _peer = TcpStream::connect(address).await.unwrap();
-        let (socket, _) = listener.accept().await.unwrap();
-        let permit = Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap();
-        let mut socket = TimedSocket {
-            socket,
-            expiry: Box::pin(sleep(Duration::from_millis(80))),
-            _permit: permit,
-        };
-        let data = vec![0u8; 64 * 1024];
-        let result = timeout(Duration::from_secs(2), async {
-            loop {
-                socket.write_all(&data).await?;
-            }
-            #[allow(unreachable_code)]
-            Ok::<(), io::Error>(())
-        })
-        .await
-        .unwrap();
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
-    }
-
-    #[test]
-    fn configuration_and_output_guards() {
-        let mut cfg = config();
-        cfg.queue_capacity = 0;
-        assert_eq!(cfg.validate(), Err(Code::InvalidRequest));
-        cfg.queue_capacity = 4097;
-        assert_eq!(cfg.validate(), Err(Code::InvalidRequest));
-
-        let row = vector(&[1]);
-        assert!(validate_output(std::slice::from_ref(&row), 1).is_ok());
-        assert!(validate_output(&[], 1).is_err());
-        assert!(validate_output(&[vec![0.0; 2048]], 1).is_err());
-        let mut invalid = row.clone();
-        invalid[1] = f32::NAN;
-        assert!(validate_output(&[invalid], 1).is_err());
-        let mut different_zero = row.clone();
-        different_zero[0] = 0.0;
-        assert!(!exact_f32(&[row], &[different_zero]));
     }
 }

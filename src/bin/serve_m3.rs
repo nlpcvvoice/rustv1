@@ -1,17 +1,25 @@
+// src/bin/serve_m3.rs
+
 use rustv1::{
     http_serve::{
         bind_control, serve_control, Backend, BoundedListener, Code, Config, Logger,
         PinnedTokenizer, Service, StartupCheck,
     },
-    model::{EngineConfig, IndependentExecutor},
+    model::EngineConfig,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fs,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tokio::{net::TcpListener, sync::oneshot, time::timeout};
 
 struct CudaBackend {
-    executor: IndependentExecutor,
+    executor: rustv1::model::IndependentExecutor,
 }
 
 impl Backend for CudaBackend {
@@ -30,7 +38,6 @@ impl Backend for CudaBackend {
         candle_core::cuda_backend::set_gemm_reduced_precision_f32(false);
         candle_core::cuda_backend::set_gemm_reduced_precision_f16(false);
         candle_core::cuda_backend::set_gemm_reduced_precision_bf16(false);
-        // This intentionally does not replace or unpoison the executor.
         Ok(())
     }
 }
@@ -49,18 +56,6 @@ struct Args {
 
 impl Args {
     fn parse() -> Result<Self, Code> {
-        // serve_m3 MODEL_DIR MANIFEST_JSONL AUDIT_IDENTITY BIND_ADDR
-        //          QUEUE_CAPACITY TOKENIZER_SHA256 STARTUP_CHECK_JSON
-        //          STARTUP_CHECK_SHA256 CONTROL_ADDR_OR_DASH
-        //
-        // STARTUP_CHECK_JSON:
-        // {"tokens":[[...]],"embeddings":[[...2048 F32 values...]]}
-        //
-        // The startup artifact must come from accepted in-process evidence,
-        // not from this server's own startup execution.
-        //
-        // Control is disabled with "-". Otherwise its address must be loopback,
-        // and M3_ACCEPTANCE_SECRET must contain 32..256 bytes.
         let args: Vec<String> = std::env::args().collect();
         if args.len() != 10 {
             return Err(Code::InvalidRequest);
@@ -100,6 +95,11 @@ fn integer(value: &Value, key: &str) -> Result<usize, Code> {
         .ok_or(Code::InvalidRequest)
 }
 
+fn file_sha256(path: &Path) -> Result<String, Code> {
+    let bytes = fs::read(path).map_err(|_| Code::InvalidRequest)?;
+    Ok(format!("{:x}", Sha256::digest(&bytes)))
+}
+
 async fn termination() -> Result<(), Code> {
     #[cfg(unix)]
     {
@@ -128,6 +128,29 @@ async fn run() -> Result<(), Code> {
         None
     };
 
+    let launch_policy_path =
+        PathBuf::from(std::env::var("RV1_M3_POLICY").map_err(|_| Code::InvalidRequest)?);
+    let policy_bytes = fs::read(&launch_policy_path).map_err(|_| Code::InvalidRequest)?;
+    let policy: Value = serde_json::from_slice(&policy_bytes).map_err(|_| Code::InvalidRequest)?;
+
+    let expected_control: SocketAddr = policy["launch_control_address"]
+        .as_str()
+        .ok_or(Code::InvalidRequest)?
+        .parse()
+        .map_err(|_| Code::InvalidRequest)?;
+    if !expected_control.ip().is_loopback()
+        || args.control != Some(expected_control)
+        || policy["audit_identity"] != args.audit_identity
+        || policy["artifacts"]["tokenizer"]["sha256"] != args.tokenizer_sha256
+        || policy["artifacts"]["startup_check"]["sha256"] != args.startup_check_sha256
+        || policy["limits"]["admission_capacity"].as_u64() != Some(64)
+        || policy["limits"]["queue_capacity"].as_u64() != Some(args.queue_capacity as u64)
+        || policy["limits"]["server_request_ms"].as_u64() != Some(60_000)
+        || policy["model"] != rustv1::http_serve::MODEL_ID
+    {
+        return Err(Code::InvalidRequest);
+    }
+
     let bind = args.bind;
     let control_address = args.control;
     let model_dir = args.model_dir.clone();
@@ -136,8 +159,6 @@ async fn run() -> Result<(), Code> {
     let startup_sha256 = args.startup_check_sha256;
     let queue_capacity = args.queue_capacity;
 
-    // Filesystem IO, tokenizer construction, and hash verification do not run
-    // on a Tokio scheduler thread.
     let load = tokio::task::spawn_blocking(move || {
         let config_bytes =
             std::fs::read(model_dir.join("config.json")).map_err(|_| Code::InvalidRequest)?;
@@ -181,32 +202,77 @@ async fn run() -> Result<(), Code> {
         .map_err(|_| Code::DeadlineExceeded)?
         .map_err(|_| Code::InvalidRequest)??;
 
-    // Bind before allocating CUDA resources, but do not accept requests until
-    // the owner-thread startup check has completed.
     let listener = TcpListener::bind(bind)
         .await
         .map_err(|_| Code::InvalidRequest)?;
+    let actual_http_address = listener.local_addr().map_err(|_| Code::InvalidRequest)?;
     let listener = BoundedListener::new(listener, &config.transport)?;
     let control_listener = match control_address {
         Some(address) => Some(bind_control(address).await?),
         None => None,
     };
-    let grace = config.shutdown_grace;
+
+    // B1: Prepare Launch Attestation file and compute digest
+    let binary_sha256 = file_sha256(&std::env::current_exe().map_err(|_| Code::InvalidRequest)?)?;
+    let start_utc = chrono_or_epoch();
+    let instance_id = format!(
+        "{}-{}",
+        std::process::id(),
+        start_utc.replace([':', '-'], "")
+    );
+    let build_identity = json!({
+        "rustc_version": env!("RV1_BUILD_RUSTC_VERSION"),
+        "nvcc_version": env!("RV1_BUILD_NVCC_VERSION"),
+        "cuda_compute_cap": env!("RV1_BUILD_CUDA_COMPUTE_CAP"),
+        "target_features": env!("RV1_BUILD_TARGET_FEATURES"),
+    });
+
+    let attestation_value = json!({
+        "schema": "rustv1.server_launch_attestation.v1",
+        "instance_id": instance_id,
+        "pid": std::process::id(),
+        "start_utc": start_utc,
+        "binary_sha256": binary_sha256,
+        "settings_sha256": format!("{:x}", Sha256::digest(&policy_bytes)),
+        "audit_sha256": policy["artifacts"]["audit"]["sha256"],
+        "startup_check_sha256": policy["artifacts"]["startup_check"]["sha256"],
+        "build_identity": build_identity,
+    });
+    let attestation_bytes =
+        serde_json::to_vec_pretty(&attestation_value).map_err(|_| Code::InvalidRequest)?;
+    let attestation_sha256 = format!("{:x}", Sha256::digest(&attestation_bytes));
+
+    let attestation_path = std::env::var("RV1_ATTESTATION_PATH")
+        .unwrap_or_else(|_| format!("{}.att.json", args.manifest.display()));
+    fs::write(&attestation_path, &attestation_bytes).map_err(|_| Code::InvalidRequest)?;
+
+    let manifest_path = args.manifest.clone();
+    let model_dir_clone = args.model_dir.clone();
+    let audit_identity_clone = args.audit_identity.clone();
+    let attestation_sha256_clone = attestation_sha256.clone();
+
     let mut service = Service::spawn(config, tokenizer, Logger::stderr(), check, move || {
-        // Use the unchanged production M2 path. No second math pin,
-        // alternative loader, or CUDA initialization is introduced here.
-        //
-        // Important: the attached implementation of m2_route::open calls
-        // MathModePin::pin, whose visible audit-identity validation is a
-        // nonempty-string check. Stronger audit-artifact/lock validation
-        // is not implemented by those attached bytes. This adapter does
-        // not claim otherwise or silently substitute a different path.
-        let executor =
-            rustv1::m2_route::open(&args.model_dir, &args.manifest, 0, &args.audit_identity)
-                .map_err(|_| Code::InferenceFailed)?;
+        let executor = rustv1::m2_route::open_with_attestation(
+            &model_dir_clone,
+            &manifest_path,
+            0,
+            &audit_identity_clone,
+            Some(&attestation_sha256_clone),
+        )
+        .map_err(|_| Code::InferenceFailed)?;
         Ok(CudaBackend { executor })
     })?;
     service.wait_ready().await?;
+
+    let mut launch_att = attestation_value;
+    launch_att["http_address"] = json!(actual_http_address.to_string());
+    launch_att["control_address"] = json!(control_listener
+        .as_ref()
+        .ok_or(Code::InvalidRequest)?
+        .local_addr()
+        .map_err(|_| Code::InvalidRequest)?
+        .to_string());
+    service.app.install_launch_attestation(launch_att)?;
 
     let control_task = match (control_listener, control_secret) {
         (Some(listener), Some(secret)) => {
@@ -233,7 +299,6 @@ async fn run() -> Result<(), Code> {
         _ = &mut server => false,
     };
 
-    // Admission closes before the listener's graceful-shutdown notification.
     service.app.begin_drain();
     let _ = stop.send(());
     if let Some(task) = control_task {
@@ -243,14 +308,17 @@ async fn run() -> Result<(), Code> {
 
     let shutdown = service.shutdown().await;
     if shutdown.is_err() {
-        // The caller exits the process immediately. It must not await runtime
-        // destruction with a potentially stuck CUDA owner/blocking join.
         server.abort();
         return shutdown;
     }
 
     if normal_signal {
-        match timeout(grace, &mut server).await {
+        match timeout(
+            Duration::from_secs(service.app.config.drain_seconds),
+            &mut server,
+        )
+        .await
+        {
             Ok(Ok(Ok(()))) => Ok(()),
             _ => {
                 server.abort();
@@ -262,8 +330,14 @@ async fn run() -> Result<(), Code> {
     }
 }
 
+fn chrono_or_epoch() -> String {
+    let d = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("{}.{:06}Z", d.as_secs(), d.subsec_micros())
+}
+
 fn main() {
-    // No panic payload, raw error chain, CLI value, or path reaches stderr.
     std::panic::set_hook(Box::new(|_| {}));
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -276,8 +350,6 @@ fn main() {
     let result = runtime.block_on(run());
 
     if result.is_err() {
-        // In particular, do not block in Runtime::drop after a hard owner
-        // timeout. Process termination is the only recovery boundary.
         std::process::exit(1);
     }
     runtime.shutdown_timeout(Duration::from_secs(1));

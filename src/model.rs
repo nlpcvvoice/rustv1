@@ -1101,6 +1101,17 @@ impl IndependentExecutor {
         math: crate::cuda_math::MathModePin,
         manifest_path: &std::path::Path,
     ) -> Result<Self> {
+        Self::load_with_attestation(dir, device, engine, math, manifest_path, None)
+    }
+
+    pub fn load_with_attestation(
+        dir: &std::path::Path,
+        device: Device,
+        engine: EngineConfig,
+        math: crate::cuda_math::MathModePin,
+        manifest_path: &std::path::Path,
+        attestation_sha256: Option<&str>,
+    ) -> Result<Self> {
         use std::io::Write;
 
         ensure!(matches!(&device, Device::Cuda(_)), "CUDA required");
@@ -1117,22 +1128,25 @@ impl IndependentExecutor {
             .create_new(true)
             .open(manifest_path)?;
 
-        serde_json::to_writer(
-            &mut manifest,
-            &serde_json::json!({
-                "kind": "executor_start",
-                "execution_policy": "independent_sequence_v1",
-                "serving_route_scope": "in_process_token_ID_API",
-                "http_certified": false,
-                "profile": "F",
-                "weights_and_projections": "BF16",
-                "norm_activation_attention": "widened_as_defined_by_F",
-                "physical_B": 1,
-                "physical_S": "valid_token_count",
-                "stream_policy": "single_owner_no_overlap",
-                "math": math.check()?
-            }),
-        )?;
+        let mut start_record = serde_json::json!({
+            "kind": "executor_start",
+            "execution_policy": "independent_sequence_v1",
+            "serving_route_scope": "in_process_token_ID_API",
+            "http_certified": false,
+            "profile": "F",
+            "weights_and_projections": "BF16",
+            "norm_activation_attention": "widened_as_defined_by_F",
+            "physical_B": 1,
+            "physical_S": "valid_token_count",
+            "stream_policy": "single_owner_no_overlap",
+            "math": math.check()?
+        });
+
+        if let Some(att_sha) = attestation_sha256 {
+            start_record["attestation_sha256"] = serde_json::json!(att_sha);
+        }
+
+        serde_json::to_writer(&mut manifest, &start_record)?;
         manifest.write_all(b"\n")?;
         manifest.flush()?;
         manifest.sync_data()?;
