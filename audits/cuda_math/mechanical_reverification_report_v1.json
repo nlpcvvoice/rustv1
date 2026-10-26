@@ -1,0 +1,1012 @@
+{
+ "all_pass": false,
+ "audit_artifact": "audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json",
+ "audit_revision": "v1",
+ "files": [
+  {
+   "crate_sha256": "c15b675b80d994b2eadb20a4bbe434eabeb454eac3ee5e2b4cf6f147ee9be091",
+   "crate_sha256_expected": "c15b675b80d994b2eadb20a4bbe434eabeb454eac3ee5e2b4cf6f147ee9be091",
+   "crate_sha256_match": true,
+   "file_sha256": "bc2bd5fe3702bfccb49d64af07dc4197013d6617c720643cd2a14b718f4134e2",
+   "file_sha256_expected": "bc2bd5fe3702bfccb49d64af07dc4197013d6617c720643cd2a14b718f4134e2",
+   "file_sha256_match": true,
+   "id": "candle_cuda",
+   "line_count": 2682,
+   "owner": "candle-core",
+   "pass": true,
+   "path": "src/cuda_backend/mod.rs",
+   "regions": [
+    {
+     "first_line": 1343,
+     "in_bounds": true,
+     "last_line": 1433,
+     "pass": true,
+     "symbol": "gemm_config",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2188,
+     "in_bounds": true,
+     "last_line": 2242,
+     "pass": true,
+     "symbol": "<CudaStorage as BackendStorage>::matmul",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2473,
+     "in_bounds": true,
+     "last_line": 2474,
+     "pass": true,
+     "symbol": "MM_F16_REDUCED_PRECISION",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2475,
+     "in_bounds": true,
+     "last_line": 2476,
+     "pass": true,
+     "symbol": "MM_BF16_REDUCED_PRECISION",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2477,
+     "in_bounds": true,
+     "last_line": 2478,
+     "pass": true,
+     "symbol": "MM_F32_REDUCED_PRECISION",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2482,
+     "in_bounds": true,
+     "last_line": 2484,
+     "pass": true,
+     "symbol": "gemm_reduced_precision_f32",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2488,
+     "in_bounds": true,
+     "last_line": 2490,
+     "pass": true,
+     "symbol": "set_gemm_reduced_precision_f32",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2494,
+     "in_bounds": true,
+     "last_line": 2496,
+     "pass": true,
+     "symbol": "gemm_reduced_precision_f16",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2500,
+     "in_bounds": true,
+     "last_line": 2502,
+     "pass": true,
+     "symbol": "set_gemm_reduced_precision_f16",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2506,
+     "in_bounds": true,
+     "last_line": 2508,
+     "pass": true,
+     "symbol": "gemm_reduced_precision_bf16",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2512,
+     "in_bounds": true,
+     "last_line": 2514,
+     "pass": true,
+     "symbol": "set_gemm_reduced_precision_bf16",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2516,
+     "in_bounds": true,
+     "last_line": 2564,
+     "pass": true,
+     "symbol": "gemm_strided_batched_f32",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2566,
+     "in_bounds": true,
+     "last_line": 2623,
+     "pass": true,
+     "symbol": "gemm_strided_batched_f16",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2625,
+     "in_bounds": true,
+     "last_line": 2682,
+     "pass": true,
+     "symbol": "gemm_strided_batched_bf16",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1507,
+     "in_bounds": true,
+     "last_line": 1646,
+     "pass": true,
+     "symbol": "<CudaStorage as BackendStorage>::to_dtype",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 97,
+     "in_bounds": true,
+     "last_line": 100,
+     "pass": true,
+     "symbol": "kernel_name",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.9.2"
+  },
+  {
+   "crate_sha256_match": true,
+   "file_sha256": "40f4bb9512f9001a983802129b6cfee16381a24b7876f13ba02cd49b6dfe1925",
+   "file_sha256_expected": "40f4bb9512f9001a983802129b6cfee16381a24b7876f13ba02cd49b6dfe1925",
+   "file_sha256_match": true,
+   "id": "candle_device",
+   "line_count": 710,
+   "owner": "candle-core",
+   "pass": true,
+   "path": "src/cuda_backend/device.rs",
+   "regions": [
+    {
+     "first_line": 33,
+     "in_bounds": true,
+     "last_line": 43,
+     "pass": true,
+     "symbol": "CudaDevice",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 247,
+     "in_bounds": true,
+     "last_line": 249,
+     "pass": true,
+     "symbol": "CudaDevice::cublas_handle",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 253,
+     "in_bounds": true,
+     "last_line": 271,
+     "pass": true,
+     "symbol": "CudaDevice::new_with_stream",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 277,
+     "in_bounds": true,
+     "last_line": 295,
+     "pass": true,
+     "symbol": "<CudaDevice as BackendDevice>::new",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 176,
+     "in_bounds": true,
+     "last_line": 196,
+     "pass": true,
+     "symbol": "CudaDevice::compile",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 202,
+     "in_bounds": true,
+     "last_line": 225,
+     "pass": true,
+     "symbol": "CudaDevice::get_or_load_custom_func",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 227,
+     "in_bounds": true,
+     "last_line": 245,
+     "pass": true,
+     "symbol": "CudaDevice::get_or_load_func",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 148,
+     "in_bounds": true,
+     "last_line": 150,
+     "pass": true,
+     "symbol": "CudaFunc::builder",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.9.2"
+  },
+  {
+   "crate_sha256_match": true,
+   "file_sha256": "25b95a8deecffa87d55325d9ae258b9552778a7eb24a653b7c1438340aa21487",
+   "file_sha256_expected": "25b95a8deecffa87d55325d9ae258b9552778a7eb24a653b7c1438340aa21487",
+   "file_sha256_match": true,
+   "id": "candle_tensor",
+   "line_count": 3116,
+   "owner": "candle-core",
+   "pass": true,
+   "path": "src/tensor.rs",
+   "regions": [
+    {
+     "first_line": 159,
+     "in_bounds": true,
+     "last_line": 177,
+     "pass": true,
+     "symbol": "from_storage",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1495,
+     "in_bounds": true,
+     "last_line": 1538,
+     "pass": true,
+     "symbol": "Tensor::matmul",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1545,
+     "in_bounds": true,
+     "last_line": 1560,
+     "pass": true,
+     "symbol": "Tensor::broadcast_matmul",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2453,
+     "in_bounds": true,
+     "last_line": 2462,
+     "pass": true,
+     "symbol": "Tensor::to_dtype",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2250,
+     "in_bounds": true,
+     "last_line": 2261,
+     "pass": true,
+     "symbol": "Tensor::t",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2265,
+     "in_bounds": true,
+     "last_line": 2282,
+     "pass": true,
+     "symbol": "Tensor::transpose",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2466,
+     "in_bounds": true,
+     "last_line": 2477,
+     "pass": true,
+     "symbol": "Tensor::contiguous",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 2523,
+     "in_bounds": true,
+     "last_line": 2551,
+     "pass": true,
+     "symbol": "Tensor::reshape",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.9.2"
+  },
+  {
+   "crate_sha256_match": true,
+   "file_sha256": "6241271357ee152f0244e47053f40de811832fca89e8aece6420bbc1b5c485c4",
+   "file_sha256_expected": "6241271357ee152f0244e47053f40de811832fca89e8aece6420bbc1b5c485c4",
+   "file_sha256_match": true,
+   "id": "candle_storage",
+   "line_count": 849,
+   "owner": "candle-core",
+   "pass": true,
+   "path": "src/storage.rs",
+   "regions": [
+    {
+     "first_line": 47,
+     "in_bounds": true,
+     "last_line": 65,
+     "pass": true,
+     "symbol": "Storage::same_device",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 67,
+     "in_bounds": true,
+     "last_line": 75,
+     "pass": true,
+     "symbol": "Storage::same_dtype",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 769,
+     "in_bounds": true,
+     "last_line": 798,
+     "pass": true,
+     "symbol": "Storage::matmul",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 205,
+     "in_bounds": true,
+     "last_line": 220,
+     "pass": true,
+     "symbol": "Storage::apply_op1",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 188,
+     "in_bounds": true,
+     "last_line": 203,
+     "pass": true,
+     "symbol": "Storage::to_dtype",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.9.2"
+  },
+  {
+   "crate_sha256": "7359bf1de037ddada72729c3acec9b040f3468400c6e9e740b01ba0cd2e89562",
+   "crate_sha256_expected": "7359bf1de037ddada72729c3acec9b040f3468400c6e9e740b01ba0cd2e89562",
+   "crate_sha256_match": true,
+   "file_sha256": "ede0422de76c4f99199ebd011f7792f54f6404dbfb47a454eac54c0f453493cf",
+   "file_sha256_expected": "ede0422de76c4f99199ebd011f7792f54f6404dbfb47a454eac54c0f453493cf",
+   "file_sha256_match": true,
+   "id": "cudarc_safe_gemm",
+   "line_count": 635,
+   "owner": "cudarc",
+   "pass": true,
+   "path": "src/cublas/safe/gemm.rs",
+   "regions": [
+    {
+     "first_line": 8,
+     "in_bounds": true,
+     "last_line": 19,
+     "pass": true,
+     "symbol": "GemmConfig",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 23,
+     "in_bounds": true,
+     "last_line": 29,
+     "pass": true,
+     "symbol": "StridedBatchedConfig",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 32,
+     "in_bounds": true,
+     "last_line": 60,
+     "pass": true,
+     "symbol": "Gemm",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 64,
+     "in_bounds": true,
+     "last_line": 97,
+     "pass": true,
+     "symbol": "<CudaBlas as Gemm<half::f16>>::gemm",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 98,
+     "in_bounds": true,
+     "last_line": 139,
+     "pass": true,
+     "symbol": "<CudaBlas as Gemm<half::f16>>::gemm_strided_batched",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 144,
+     "in_bounds": true,
+     "last_line": 181,
+     "pass": true,
+     "symbol": "<CudaBlas as Gemm<half::bf16>>::gemm",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 182,
+     "in_bounds": true,
+     "last_line": 223,
+     "pass": true,
+     "symbol": "<CudaBlas as Gemm<half::bf16>>::gemm_strided_batched",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 227,
+     "in_bounds": true,
+     "last_line": 253,
+     "pass": true,
+     "symbol": "<CudaBlas as Gemm<f32>>::gemm",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 255,
+     "in_bounds": true,
+     "last_line": 285,
+     "pass": true,
+     "symbol": "<CudaBlas as Gemm<f32>>::gemm_strided_batched",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.19.10"
+  },
+  {
+   "crate_sha256_match": true,
+   "file_sha256": "5842b11f0cef6e87a2de852d1c57756ca3e19c4082b71d5bd580bcbcede1d843",
+   "file_sha256_expected": "5842b11f0cef6e87a2de852d1c57756ca3e19c4082b71d5bd580bcbcede1d843",
+   "file_sha256_match": true,
+   "id": "cudarc_safe",
+   "line_count": 126,
+   "owner": "cudarc",
+   "pass": true,
+   "path": "src/cublas/safe/mod.rs",
+   "regions": [
+    {
+     "first_line": 35,
+     "in_bounds": true,
+     "last_line": 42,
+     "pass": true,
+     "symbol": "CudaBlas::new",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 45,
+     "in_bounds": true,
+     "last_line": 47,
+     "pass": true,
+     "symbol": "CudaBlas::handle",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 55,
+     "in_bounds": true,
+     "last_line": 58,
+     "pass": true,
+     "symbol": "CudaBlas::set_stream",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 67,
+     "in_bounds": true,
+     "last_line": 75,
+     "pass": true,
+     "symbol": "CudaBlas::set_pointer_mode",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 79,
+     "in_bounds": true,
+     "last_line": 85,
+     "pass": true,
+     "symbol": "CudaBlas::get_pointer_mode",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.19.10"
+  },
+  {
+   "crate_sha256_match": true,
+   "file_sha256": "01467682707577979cf669b8493cda19465fc34f8653e74265abf08062c1efa1",
+   "file_sha256_expected": "01467682707577979cf669b8493cda19465fc34f8653e74265abf08062c1efa1",
+   "file_sha256_match": true,
+   "id": "cudarc_result",
+   "line_count": 516,
+   "owner": "cudarc",
+   "pass": true,
+   "path": "src/cublas/result.rs",
+   "regions": [
+    {
+     "first_line": 29,
+     "in_bounds": true,
+     "last_line": 35,
+     "pass": true,
+     "symbol": "create_handle",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 53,
+     "in_bounds": true,
+     "last_line": 58,
+     "pass": true,
+     "symbol": "set_stream",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 373,
+     "in_bounds": true,
+     "last_line": 416,
+     "pass": true,
+     "symbol": "gemm_ex",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 427,
+     "in_bounds": true,
+     "last_line": 478,
+     "pass": true,
+     "symbol": "gemm_strided_batched_ex",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 174,
+     "in_bounds": true,
+     "last_line": 194,
+     "pass": true,
+     "symbol": "sgemm",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 301,
+     "in_bounds": true,
+     "last_line": 326,
+     "pass": true,
+     "symbol": "sgemm_strided_batched",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.19.10"
+  },
+  {
+   "crate_sha256_match": true,
+   "file_sha256": "feef119470d453fe0409a9ed124539d168aa1f07edc8b5434f984a542e15eb5b",
+   "file_sha256_expected": "feef119470d453fe0409a9ed124539d168aa1f07edc8b5434f984a542e15eb5b",
+   "file_sha256_match": true,
+   "id": "cudarc_safe_grouped_gemm",
+   "line_count": 401,
+   "owner": "cudarc",
+   "pass": true,
+   "path": "src/cublas/safe/grouped_gemm.rs",
+   "regions": [
+    {
+     "first_line": 12,
+     "in_bounds": true,
+     "last_line": 43,
+     "pass": true,
+     "symbol": "GroupedGemmDtype and its F16/BF16 implementations",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 45,
+     "in_bounds": true,
+     "last_line": 100,
+     "pass": true,
+     "symbol": "GroupedGemmConfig",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 102,
+     "in_bounds": true,
+     "last_line": 122,
+     "pass": true,
+     "symbol": "GroupedGemm",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 124,
+     "in_bounds": true,
+     "last_line": 148,
+     "pass": true,
+     "symbol": "<CudaBlas as GroupedGemm<T>>::grouped_gemm, older-CUDA branch",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 150,
+     "in_bounds": true,
+     "last_line": 233,
+     "pass": true,
+     "symbol": "<CudaBlas as GroupedGemm<T>>::grouped_gemm, supported-CUDA branch",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.19.10"
+  },
+  {
+   "crate_sha256": "3045fa9e7aef8567d209a27d56b692f60b96f4d0569f4c3011f8ca6715c65e03",
+   "crate_sha256_expected": "3045fa9e7aef8567d209a27d56b692f60b96f4d0569f4c3011f8ca6715c65e03",
+   "crate_sha256_match": true,
+   "file_sha256": "9c60662c0e2c890777a09b2bbea34da8bef716bd247b8775da0a61fe4263068d",
+   "file_sha256_expected": "9c60662c0e2c890777a09b2bbea34da8bef716bd247b8775da0a61fe4263068d",
+   "file_sha256_match": true,
+   "id": "candle_nn_ops",
+   "line_count": 1276,
+   "owner": "candle-nn",
+   "pass": true,
+   "path": "src/ops.rs",
+   "regions": [
+    {
+     "first_line": 22,
+     "in_bounds": true,
+     "last_line": 29,
+     "pass": true,
+     "symbol": "softmax",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 288,
+     "in_bounds": true,
+     "last_line": 326,
+     "pass": true,
+     "symbol": "<SoftmaxLastDim as candle::CustomOp1>::cpu_fwd",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 328,
+     "in_bounds": true,
+     "last_line": 383,
+     "pass": true,
+     "symbol": "<SoftmaxLastDim as candle::CustomOp1>::cuda_fwd",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 429,
+     "in_bounds": true,
+     "last_line": 431,
+     "pass": true,
+     "symbol": "softmax_last_dim",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.9.2"
+  },
+  {
+   "crate_sha256_match": true,
+   "file_sha256": "c7827f685ef90affe4cefee1d133e9acdbd2489125e6f47f233f62e289a9c658",
+   "file_sha256_expected": "c7827f685ef90affe4cefee1d133e9acdbd2489125e6f47f233f62e289a9c658",
+   "file_sha256_match": true,
+   "id": "candle_nn_linear",
+   "line_count": 114,
+   "owner": "candle-nn",
+   "pass": true,
+   "path": "src/linear.rs",
+   "regions": [
+    {
+     "first_line": 29,
+     "in_bounds": true,
+     "last_line": 31,
+     "pass": true,
+     "symbol": "Linear::new",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 43,
+     "in_bounds": true,
+     "last_line": 78,
+     "pass": true,
+     "symbol": "<Linear as super::Module>::forward",
+     "symbol_in_region": true
+    }
+   ],
+   "version": "0.9.2"
+  },
+  {
+   "file_sha256": "a2e29333acd3424b1c5a16f17e335994cea46cd54facbba54916da307a026719",
+   "file_sha256_expected": "a2e29333acd3424b1c5a16f17e335994cea46cd54facbba54916da307a026719",
+   "file_sha256_match": true,
+   "id": "repo_precision",
+   "line_count": 688,
+   "owner": "rustv1",
+   "pass": true,
+   "path": "src/precision.rs",
+   "regions": [
+    {
+     "first_line": 35,
+     "in_bounds": true,
+     "last_line": 37,
+     "pass": true,
+     "symbol": "PrecisionProfile::single_norm",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 39,
+     "in_bounds": true,
+     "last_line": 41,
+     "pass": true,
+     "symbol": "PrecisionProfile::single_activation",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 43,
+     "in_bounds": true,
+     "last_line": 45,
+     "pass": true,
+     "symbol": "PrecisionProfile::wide_qk",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 47,
+     "in_bounds": true,
+     "last_line": 49,
+     "pass": true,
+     "symbol": "PrecisionProfile::wide_pv",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 52,
+     "in_bounds": true,
+     "last_line": 76,
+     "pass": true,
+     "symbol": "rms",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 78,
+     "in_bounds": true,
+     "last_line": 90,
+     "pass": true,
+     "symbol": "silu_mul",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 96,
+     "in_bounds": true,
+     "last_line": 123,
+     "pass": true,
+     "symbol": "attention",
+     "symbol_in_region": true
+    }
+   ],
+   "source": "git rev f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163",
+   "version": "f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163"
+  },
+  {
+   "file_sha256": "55d58a4ea4086f2f4c59934a43b8ba0b27e24952d9c97fe4df7ecf9c64431ca7",
+   "file_sha256_expected": "55d58a4ea4086f2f4c59934a43b8ba0b27e24952d9c97fe4df7ecf9c64431ca7",
+   "file_sha256_match": true,
+   "id": "repo_cuda_math",
+   "line_count": 160,
+   "owner": "rustv1",
+   "pass": false,
+   "path": "src/cuda_math.rs",
+   "regions": [
+    {
+     "first_line": 16,
+     "in_bounds": true,
+     "last_line": 18,
+     "pass": true,
+     "symbol": "PIN_ACTIVE",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 28,
+     "in_bounds": true,
+     "last_line": 34,
+     "pass": true,
+     "symbol": "Settings::read",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 36,
+     "in_bounds": true,
+     "last_line": 38,
+     "pass": true,
+     "symbol": "Settings::all_disabled",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 59,
+     "in_bounds": true,
+     "last_line": 65,
+     "pass": true,
+     "symbol": "MathModePin",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 68,
+     "in_bounds": true,
+     "last_line": 100,
+     "pass": true,
+     "symbol": "MathModePin::pin",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 102,
+     "in_bounds": true,
+     "last_line": 151,
+     "pass": true,
+     "symbol": "MathModePin::check",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 158,
+     "in_bounds": false,
+     "last_line": 162,
+     "pass": false,
+     "symbol": "<MathModePin as Drop>::drop",
+     "symbol_in_region": false
+    }
+   ],
+   "source": "git rev f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163",
+   "version": "f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163"
+  },
+  {
+   "file_sha256": "d1a13a6148cc77bed9c2a2906785cdb4c11118ed69b5001560369888b6206320",
+   "file_sha256_expected": "d1a13a6148cc77bed9c2a2906785cdb4c11118ed69b5001560369888b6206320",
+   "file_sha256_match": true,
+   "id": "repo_m2_route",
+   "line_count": 29,
+   "owner": "rustv1",
+   "pass": true,
+   "path": "src/m2_route.rs",
+   "regions": [
+    {
+     "first_line": 14,
+     "in_bounds": true,
+     "last_line": 29,
+     "pass": true,
+     "symbol": "open",
+     "symbol_in_region": true
+    }
+   ],
+   "source": "git rev f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163",
+   "version": "f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163"
+  },
+  {
+   "file_sha256": "556c6868f31f65562618f6969a4b818415db4bd2be64680e6870745696171b25",
+   "file_sha256_expected": "556c6868f31f65562618f6969a4b818415db4bd2be64680e6870745696171b25",
+   "file_sha256_match": true,
+   "id": "repo_model",
+   "line_count": 1395,
+   "owner": "rustv1",
+   "pass": true,
+   "path": "src/model.rs",
+   "regions": [
+    {
+     "first_line": 328,
+     "in_bounds": true,
+     "last_line": 349,
+     "pass": true,
+     "symbol": "expected_manifest",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 353,
+     "in_bounds": true,
+     "last_line": 408,
+     "pass": true,
+     "symbol": "validate_manifest",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 411,
+     "in_bounds": true,
+     "last_line": 416,
+     "pass": true,
+     "symbol": "linear3",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 418,
+     "in_bounds": true,
+     "last_line": 428,
+     "pass": true,
+     "symbol": "no_bias",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 508,
+     "in_bounds": true,
+     "last_line": 633,
+     "pass": true,
+     "symbol": "Model::load",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 635,
+     "in_bounds": true,
+     "last_line": 638,
+     "pass": true,
+     "symbol": "Model::with_precision",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 769,
+     "in_bounds": true,
+     "last_line": 782,
+     "pass": true,
+     "symbol": "Model::rope",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 784,
+     "in_bounds": true,
+     "last_line": 791,
+     "pass": true,
+     "symbol": "Model::repeat_kv",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 795,
+     "in_bounds": true,
+     "last_line": 799,
+     "pass": true,
+     "symbol": "Model::run_decoder",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 816,
+     "in_bounds": true,
+     "last_line": 1000,
+     "pass": true,
+     "symbol": "Model::run_decoder_padded",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1002,
+     "in_bounds": true,
+     "last_line": 1010,
+     "pass": true,
+     "symbol": "Model::forward",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1014,
+     "in_bounds": true,
+     "last_line": 1023,
+     "pass": true,
+     "symbol": "Model::pooled_mean",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1077,
+     "in_bounds": true,
+     "last_line": 1085,
+     "pass": true,
+     "symbol": "IndependentExecutor",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1097,
+     "in_bounds": true,
+     "last_line": 1148,
+     "pass": true,
+     "symbol": "IndependentExecutor::load",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1154,
+     "in_bounds": true,
+     "last_line": 1162,
+     "pass": true,
+     "symbol": "IndependentExecutor::record",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1164,
+     "in_bounds": true,
+     "last_line": 1192,
+     "pass": true,
+     "symbol": "IndependentExecutor::forward_serving",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1194,
+     "in_bounds": true,
+     "last_line": 1286,
+     "pass": true,
+     "symbol": "IndependentExecutor::forward_validated",
+     "symbol_in_region": true
+    }
+   ],
+   "source": "git rev f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163",
+   "version": "f11f2bc5f2b7eb16a4c09b0b6b19a181ef58d163"
+  }
+ ],
+ "generated_at_utc": "2026-10-26T20:02:42Z",
+ "schema": "rustv1.mechanical_region_boundary_reverification.v1",
+ "tool": "tools/verify_mechanical_regions.py"
+}
