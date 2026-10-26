@@ -38,6 +38,14 @@ name = "accept_m3"
 name = "bench_m2_baseline"
 required-features = ["cuda"]
 
+[[bin]]
+name = "startup_check_gen"
+required-features = ["cuda"]
+
+[[bin]]
+name = "golden_export"
+required-features = ["cuda"]
+
 [dependencies]
 anyhow = "1"
 axum = "0.8"
