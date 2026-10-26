@@ -1,0 +1,39 @@
+[03:22:54] PHASE model download
+[03:23:03] MODEL /root/.cache/huggingface/hub/models--nvidia--Nemotron-3-Embed-1B-BF16/snapshots/c0c9fea93ea424587517f2c59e20db9f1d6bf615
+[03:23:03] PHASE startup check generation
+ 
+[03:23:14] GEN_RC 0
+[03:23:14] PHASE serve_m3 start
+[03:23:16] SERVE_UP True
+[03:23:16] PHASE probe
+[03:23:16] PROBE_OK 0.0089s
+[03:23:16] PHASE warmup
+[03:23:16] PHASE sequential latency
+[03:23:20] PHASE concurrent throughput (8 threads x 25, 1-token)
+{
+ "kind": "httpdemo",
+ "note": "demo-grade, not acceptance",
+ "seq_1tok": {
+  "n": 200,
+  "p50_ms": 6.464,
+  "p95_ms": 6.997,
+  "p99_ms": 7.242,
+  "mean_ms": 6.482
+ },
+ "seq_1024tok": {
+  "n": 50,
+  "p50_ms": 39.959,
+  "p95_ms": 40.459,
+  "p99_ms": 40.654,
+  "mean_ms": 39.921
+ },
+ "conc_8x25_1tok": {
+  "threads": 8,
+  "n": 200,
+  "wall_s": 1.147,
+  "rps": 174.39,
+  "p50_ms": 45.336,
+  "p95_ms": 47.717
+ }
+}
+[03:23:21] DEMO_RC 0
