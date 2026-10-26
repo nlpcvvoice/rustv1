@@ -32,10 +32,6 @@ fn run(model_dir: &str, tokens_path: &str, out_path: &str, audit_identity: &str)
         out_path,
         serde_json::to_vec(&json!({"tokens": tokens, "embeddings": embeddings}))?,
     )?;
-    println!(
-        "GEN_RC 0 {} rows {}",
-        out_path,
-        embeddings.len()
-    );
+    println!("GEN_RC 0 {} rows {}", out_path, embeddings.len());
     Ok(())
 }
