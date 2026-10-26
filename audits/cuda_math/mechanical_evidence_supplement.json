@@ -1,0 +1,54 @@
+{
+ "schema": "rustv1.mechanical_evidence_supplement.v1",
+ "purpose": "bind the final all-pass report to the exact inventory bytes checked; record verifier provenance; reconcile archive digests against the bound Cargo.lock; state all_pass scope",
+ "final_report": {
+  "path": "tmp/mechanical_reverification_report_final_39c9b31.json",
+  "sha256": "cdfa17f352d3af90070f9e41c9fac353529b11588adfad26ec109644ed64737b"
+ },
+ "final_inventory": {
+  "path": "tmp/final_region_inventory_39c9b31.json",
+  "sha256": "16d9f0bd2fd991be9d3c36b698cf55d4d1ecf0b44221ed4d4fef6c38dc3e8f50"
+ },
+ "verifier": {
+  "path": "tools/verify_mechanical_regions.py",
+  "sha256": "d209ab17830a122cf2ff29f6a3bc15e7fd7ebc604df2b2a310628e08219a0bc4",
+  "note": "the copy executed from tmp/ is byte-identical to the committed tools/ copy",
+  "invocation": "python3 tools/verify_mechanical_regions.py --audit tmp/final_region_inventory_39c9b31.json --out tmp/mechanical_reverification_report_final_39c9b31.json",
+  "executed_at_utc": "2026-10-26T21:07Z (approx; see report generated_at_utc)",
+  "toolchain": "python 3.12, linux x86_64; crate archives fetched from static.crates.io"
+ },
+ "archive_digest_reconciliation": {
+  "explanation": "the submitted inventory omits the crates metadata section, so the verifier recorded crate_sha256_expected null and crate_sha256_match false for the first file of each package; subsequent files of the same package recorded match true via the cached archive. This is a metadata omission in the inventory, not an archive digest mismatch.",
+  "reconciliation": [
+   {
+    "report_entry": "candle_cuda",
+    "package": "candle-core",
+    "version": "0.9.2",
+    "recorded_archive_sha256": "c15b675b80d994b2eadb20a4bbe434eabeb454eac3ee5e2b4cf6f147ee9be091",
+    "cargo_lock_checksum": "c15b675b80d994b2eadb20a4bbe434eabeb454eac3ee5e2b4cf6f147ee9be091",
+    "equal": true
+   },
+   {
+    "report_entry": "cudarc_safe_gemm",
+    "package": "cudarc",
+    "version": "0.19.10",
+    "recorded_archive_sha256": "7359bf1de037ddada72729c3acec9b040f3468400c6e9e740b01ba0cd2e89562",
+    "cargo_lock_checksum": "7359bf1de037ddada72729c3acec9b040f3468400c6e9e740b01ba0cd2e89562",
+    "equal": true
+   },
+   {
+    "report_entry": "candle_nn_ops",
+    "package": "candle-nn",
+    "version": "0.9.2",
+    "recorded_archive_sha256": "3045fa9e7aef8567d209a27d56b692f60b96f4d0569f4c3011f8ca6715c65e03",
+    "cargo_lock_checksum": "3045fa9e7aef8567d209a27d56b692f60b96f4d0569f4c3011f8ca6715c65e03",
+    "equal": true
+   }
+  ]
+ },
+ "all_pass_scope": "all_pass in the final report aggregates region boundary checks, symbol containment, and per-file hash comparisons only. Archive-to-lockfile comparisons did not participate in the aggregate because expected values were null. The reconciliation above independently establishes archive-to-lockfile equality for all three affected packages.",
+ "bound_lockfile": {
+  "path": "Cargo.lock",
+  "sha256": "0d394b762911d84e1ca3e324d423a8c7ba6bde4ea893173bf8d931b0b420bbb5"
+ }
+}
