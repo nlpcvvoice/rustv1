@@ -1,0 +1,70 @@
+{
+ "all_pass": true,
+ "audit_artifact": null,
+ "audit_revision": null,
+ "files": [
+  {
+   "file_sha256": "350194de55757a11eef73cc9553e4ddbc9112a134cf0c52780873a25c9e15a3a",
+   "file_sha256_expected": "350194de55757a11eef73cc9553e4ddbc9112a134cf0c52780873a25c9e15a3a",
+   "file_sha256_match": true,
+   "id": "repo_model_current",
+   "line_count": 1409,
+   "owner": "rustv1",
+   "pass": true,
+   "path": "src/model.rs",
+   "regions": [
+    {
+     "first_line": 1097,
+     "in_bounds": true,
+     "last_line": 1105,
+     "pass": true,
+     "symbol": "IndependentExecutor::load (delegating wrapper)",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 1107,
+     "in_bounds": true,
+     "last_line": 1162,
+     "pass": true,
+     "symbol": "IndependentExecutor::load_with_attestation",
+     "symbol_in_region": true
+    }
+   ],
+   "source": "git rev 39c9b311585d4c0656b0f7903d6249513855066d",
+   "version": "39c9b311585d4c0656b0f7903d6249513855066d"
+  },
+  {
+   "file_sha256": "baa1a4fa0c3c7485a9df6049acbae010f9492e01aa1a56288d00188ce8be5d83",
+   "file_sha256_expected": "baa1a4fa0c3c7485a9df6049acbae010f9492e01aa1a56288d00188ce8be5d83",
+   "file_sha256_match": true,
+   "id": "repo_m2_route_current",
+   "line_count": 51,
+   "owner": "rustv1",
+   "pass": true,
+   "path": "src/m2_route.rs",
+   "regions": [
+    {
+     "first_line": 13,
+     "in_bounds": true,
+     "last_line": 26,
+     "pass": true,
+     "symbol": "open (delegating wrapper)",
+     "symbol_in_region": true
+    },
+    {
+     "first_line": 29,
+     "in_bounds": true,
+     "last_line": 51,
+     "pass": true,
+     "symbol": "open_with_attestation",
+     "symbol_in_region": true
+    }
+   ],
+   "source": "git rev 39c9b311585d4c0656b0f7903d6249513855066d",
+   "version": "39c9b311585d4c0656b0f7903d6249513855066d"
+  }
+ ],
+ "generated_at_utc": "2026-10-26T20:33:24Z",
+ "schema": "rustv1.mechanical_region_boundary_reverification.v1",
+ "tool": "tools/verify_mechanical_regions.py"
+}

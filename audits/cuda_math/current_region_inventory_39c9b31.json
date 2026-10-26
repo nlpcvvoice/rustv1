@@ -1,0 +1,49 @@
+{
+ "schema": "rustv1.mechanical_region_boundary_reverification.v1",
+ "audit_artifact": "audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v2.json",
+ "audit_revision": "current_at_39c9b31",
+ "source_files": [
+  {
+   "id": "repo_model_current",
+   "owner": "rustv1",
+   "version_or_revision": "39c9b311585d4c0656b0f7903d6249513855066d",
+   "path": "rustv1/src/model.rs",
+   "sha256": "350194de55757a11eef73cc9553e4ddbc9112a134cf0c52780873a25c9e15a3a",
+   "examined_regions": [
+    {
+     "symbol": "IndependentExecutor::load (delegating wrapper)",
+     "first_line": 1097,
+     "last_line": 1105,
+     "finding": "Delegates to load_with_attestation with attestation_sha256 None; preserves the historical B=1 loader signature and manifest semantics."
+    },
+    {
+     "symbol": "IndependentExecutor::load_with_attestation",
+     "first_line": 1107,
+     "last_line": 1162,
+     "finding": "Pins math mode before device/model initialization; loads Model BF16 with PrecisionProfile::F; opens manifest create_new; writes executor_start with fixed F-profile fields and adds attestation_sha256 field only when Some; sync_data before return; returns single-owner executor."
+    }
+   ]
+  },
+  {
+   "id": "repo_m2_route_current",
+   "owner": "rustv1",
+   "version_or_revision": "39c9b311585d4c0656b0f7903d6249513855066d",
+   "path": "rustv1/src/m2_route.rs",
+   "sha256": "baa1a4fa0c3c7485a9df6049acbae010f9492e01aa1a56288d00188ce8be5d83",
+   "examined_regions": [
+    {
+     "symbol": "open (delegating wrapper)",
+     "first_line": 13,
+     "last_line": 26,
+     "finding": "Delegates to open_with_attestation with attestation_sha256 None; backwards-compatible M2 route entry."
+    },
+    {
+     "symbol": "open_with_attestation",
+     "first_line": 29,
+     "last_line": 51,
+     "finding": "Pins MathModePin(audit_identity) before device/model initialization; reads engine.json; creates CUDA device; calls IndependentExecutor::load_with_attestation with the optional attestation digest."
+    }
+   ]
+  }
+ ]
+}
