@@ -11,7 +11,9 @@
  "cargo_lock_sha256": "8d6082e63f04131f6b4fb5bea6d2ff1e6d7bb454e2249dd81619c2aa73ecc1d9",
  "cargo_tree_features": {
   "artifact_path": "audits/cuda_math/cargo_tree_cuda.txt",
-  "sha256": "42f4af7cfe6f9f9711962642de1d4fc2a892718b10a119b6008c699f72f698ba"
+  "sha256": "e76138108e4c9c263a6e5d49cec8bde323f4d7cd1f73060a6829c29b4e6652ac",
+  "command": "cargo tree --locked --features cuda -e features --target x86_64-unknown-linux-gnu",
+  "note": "rebound in interim v1.1 to the enabled-feature tree of the current Cargo.lock"
  },
  "crates": {
   "candle-core": {

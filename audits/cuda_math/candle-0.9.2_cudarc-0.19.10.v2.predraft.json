@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""
+Generate an UNSIGNED provenance-renewal pre-draft from the supplied v1 artifact.
+
+Usage:
+  python tools/predraft_cuda_audit_v2.py \
+    --v1 audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json \
+    --lock Cargo.lock \
+    --out audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v2.predraft.json
+
+Run from the repository root at the reported integration HEAD.
+The current source/feature-tree verification is NOT performed by this tool.
+"""
+
+import argparse
+import copy
+from datetime import datetime, timezone
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+import tomllib
+
+
+REPORT = "<SHA256:mechanical_reverification_report>"
+SCHEMA = "rustv1.cuda_math_source_audit.v1"
+INTENDED = "audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v2.json"
+
+EXPECTED_CRATES = {
+    "candle-core": (
+        "0.9.2",
+        "c15b675b80d994b2eadb20a4bbe434eabeb454eac3ee5e2b4cf6f147ee9be091",
+    ),
+    "cudarc": (
+        "0.19.10",
+        "7359bf1de037ddada72729c3acec9b040f3468400c6e9e740b01ba0cd2e89562",
+    ),
+    "candle-nn": (
+        "0.9.2",
+        "3045fa9e7aef8567d209a27d56b692f60b96f4d0569f4c3011f8ca6715c65e03",
+    ),
+    "candle-kernels": (
+        "0.9.2",
+        "b8455f84bd810047c7c41216683c1020c915a9f8a740b3b0eabdd4fb2fbaa660",
+    ),
+}
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def git(*args):
+    return subprocess.check_output(
+        ["git", *args], text=True, stderr=subprocess.STDOUT
+    ).strip()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--v1", required=True)
+    parser.add_argument("--lock", required=True)
+    parser.add_argument("--out", required=True)
+    args = parser.parse_args()
+
+    v1_bytes = Path(args.v1).read_bytes()
+    lock_bytes = Path(args.lock).read_bytes()
+    old = json.loads(v1_bytes)
+    lock = tomllib.loads(lock_bytes.decode("utf-8"))
+
+    require(old["schema"] == SCHEMA, "unexpected v1 schema")
+    require(old["artifact_revision"] == "v1", "unexpected base revision")
+
+    head = git("rev-parse", "HEAD")
+    require(re.fullmatch(r"[0-9a-f]{40}", head), "full Git revision required")
+    require(head.startswith("172fc21"), "not the reported integration HEAD")
+    require(not git("diff", "--name-only", "HEAD"), "tracked checkout is dirty")
+
+    tracked_lock = subprocess.check_output(["git", "show", "HEAD:Cargo.lock"])
+    require(
+        tracked_lock == lock_bytes,
+        "supplied Cargo.lock does not equal HEAD:Cargo.lock",
+    )
+
+    packages = lock["package"]
+    for name, (version, checksum) in EXPECTED_CRATES.items():
+        matches = [
+            p for p in packages
+            if p["name"] == name and p["version"] == version
+        ]
+        require(len(matches) == 1, f"ambiguous locked crate: {name}")
+        require(
+            matches[0].get("checksum") == checksum,
+            f"locked checksum changed: {name}",
+        )
+        require(
+            old["crates"][name]["version"] == version
+            and old["crates"][name]["cargo_lock_checksum"] == checksum,
+            f"v1 crate binding differs: {name}",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+    lock_hash = sha(lock_bytes)
+    base_hash = sha(v1_bytes)
+    old_revision = old["repository_revision"]
+    old_tree = copy.deepcopy(old["cargo_tree_features"])
+    original_regions = [
+        copy.deepcopy(f["examined_regions"]) for f in old["source_files"]
+    ]
+
+    draft = copy.deepcopy(old)
+    draft["artifact_revision"] = "v2"
+    draft["intended_path"] = INTENDED
+    draft["status"] = "unsigned_predraft"
+    draft["status_reason"] = (
+        "Provenance-only renewal pre-draft. Changed: artifact revision, "
+        "intended path, repository binding, Cargo.lock binding and draft "
+        "timestamp. Unchanged: inherited examined regions, source findings, "
+        "dispatch analysis, precision restrictions and claim boundaries. "
+        "Unchanged source bytes and current feature resolution have NOT yet "
+        "been re-verified. Not accepted, not signed, and not usable as a "
+        "passing audit."
+    )
+    draft["audited_at_utc"] = now
+    draft["auditor"] = (
+        "Unsigned pre-draft generator; historical findings inherited from "
+        "the v1 artifact. No new auditor sign-off is represented."
+    )
+    draft["repository_revision"] = head
+    draft["cargo_lock_sha256"] = lock_hash
+
+    draft["crates"]["cudarc"]["note"] = (
+        "Cargo.lock also contains cudarc 0.17.8 and a potential dependency "
+        "chain through candle-ug and ug-cuda. This pre-draft does not establish "
+        "whether that chain is enabled. The current resolved feature graph "
+        "must be reviewed; the earlier orphan characterization is not renewed."
+    )
+
+    draft["schema_compatibility"].update({
+        "required_fields_populated": False,
+        "structurally_reviewed_against_supplied_schema": False,
+        "validated": False,
+        "reason": (
+            "Retains the v1 schema identifier for a provenance-only renewal. "
+            "The mechanical-report binding remains unresolved. The timestamp "
+            "is pre-draft generation time, not completion of a new source "
+            "audit. Mechanical schema validation and renewed sign-off remain "
+            "pending."
+        ),
+    })
+
+    verification = draft["verification"]
+    for key, value in list(verification.items()):
+        if isinstance(value, bool):
+            verification[key] = False
+    verification["all_region_line_numbers_populated"] = True
+    verification["auditor_attribution_note"] = (
+        "Verification flags describe this renewal, not historical v1 claims. "
+        "The generator checked the four listed versions/checksums against "
+        "Cargo.lock but did not rehash registry sources, inspect current "
+        "repository call sites, verify regions, or establish feature resolution."
+    )
+
+    draft["provenance"] = {
+        "repository_revision": head,
+        "timestamp_utc": now,
+        "cargo_lock": {
+            "path": "Cargo.lock",
+            "sha256": lock_hash
+        },
+        "cargo_tree": {
+            "command": "cargo tree --locked --features cuda -e features",
+            "artifact": old_tree["artifact_path"],
+            "sha256": old_tree["sha256"]
+        },
+        "dependency_resolution_note": (
+            "The cargo_tree binding here and cargo_tree_features above are "
+            "HISTORICAL v1 evidence, not a regenerated current feature tree. "
+            "The pending mechanical report must identify and bind the current "
+            "feature-expanded graph and assess changes. No current orphan "
+            "status is asserted for cudarc 0.17.8."
+        ),
+        "source_hash_note": (
+            f"Inherited source findings and hashes originate in v1 artifact "
+            f"sha256:{base_hash}, whose repository binding was {old_revision}. "
+            "They are retained as historical claims and are not asserted "
+            "re-verified against the current checkout. The timestamp records "
+            "pre-draft generation. Changed provenance bindings do not widen "
+            "the audited scope."
+        )
+    }
+
+    for source in draft["source_files"]:
+        if source.get("version_or_revision") == "FILLED_BY_INTEGRATOR":
+            source["version_or_revision"] = old_revision
+
+    draft["conclusions"]["ready_for_acceptance_gate"] = False
+    draft["conclusions"]["runtime_acceptance_completed_by_this_audit"] = False
+    draft["conclusions"]["qualification"] = (
+        old["conclusions"]["qualification"]
+        + " For this v2 pre-draft, positive findings are inherited historical "
+          "source conclusions only. Their applicability to the current "
+          "repository and feature graph awaits mechanical re-verification "
+          "and auditor review."
+    )
+
+    restrictions = draft["operational_restrictions"]
+    restrictions[0] = (
+        "Do not hash-and-publish this pre-draft as an accepted audit. Resolve "
+        "the mechanical-report binding, review its evidence, validate the "
+        "artifact, and obtain renewed sign-off before use."
+    )
+    for i, text in enumerate(restrictions):
+        if "orphan 0.17.8" in text:
+            restrictions[i] = (
+                "Bind the final artifact to the full repository revision, "
+                "Cargo.lock, current preserved feature tree and every examined "
+                "source-file hash. Confirm the audited candle-core edge uses "
+                "cudarc 0.19.10. Determine the enabled status and relevance of "
+                "the separately locked cudarc 0.17.8 edge from the current graph."
+            )
+
+    draft["blocking_item_resolution"] = [
+        {
+            "id": "INHERITED_SOURCE_FINDINGS",
+            "status": "PRESERVED_NOT_REVERIFIED",
+            "evidence": (
+                "All inherited examined-region objects, source findings and "
+                "dispatch analysis are retained. No new source verification "
+                "result is asserted."
+            )
+        },
+        {
+            "id": "CURRENT_LOCK_BINDING",
+            "status": "COMPUTED",
+            "evidence": (
+                f"Cargo.lock SHA-256 is {lock_hash}; four audited crate "
+                "versions and registry checksums match the inherited values."
+            )
+        },
+        {
+            "id": "CURRENT_REPOSITORY_BINDING",
+            "status": "COMPUTED",
+            "evidence": (
+                f"Full Git HEAD is {head}; Cargo.lock equals HEAD:Cargo.lock. "
+                "This is not a source-call-site re-verification."
+            )
+        },
+        {
+            "id": "MECHANICAL_REVERIFICATION_REPORT",
+            "status": "PENDING",
+            "evidence": REPORT
+        },
+        {
+            "id": "AUDITOR_REVIEW_AND_SIGNOFF",
+            "status": "PENDING",
+            "evidence": (
+                "The report and its current source/feature-tree bindings must "
+                "be reviewed before verification flags, status or readiness "
+                "can be changed."
+            )
+        }
+    ]
+    draft["blocking_items"] = [
+        "MECHANICAL_REVERIFICATION_REPORT",
+        "AUDITOR_REVIEW_AND_SIGNOFF"
+    ]
+
+    require(
+        [f["examined_regions"] for f in draft["source_files"]]
+        == original_regions,
+        "inherited examined regions changed",
+    )
+    raw = (
+        json.dumps(draft, indent=2, ensure_ascii=False, allow_nan=False)
+        + "\n"
+    ).encode("utf-8")
+    text = raw.decode("utf-8")
+    require(text.count(REPORT) == 1, "report placeholder count")
+    require("FILLED_BY_INTEGRATOR" not in text, "stale integrator placeholder")
+    require(
+        len(re.findall(r"<SHA256:[^>]+>", text)) == 1,
+        "unexpected additional digest placeholders",
+    )
+
+    with Path(args.out).open("xb") as output:
+        output.write(raw)
+
+    print(json.dumps({
+        "output": args.out,
+        "artifact_sha256": sha(raw),
+        "cargo_lock_sha256": lock_hash,
+        "repository_revision": head,
+        "status": "unsigned_predraft",
+        "remaining_placeholder": REPORT,
+    }, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
