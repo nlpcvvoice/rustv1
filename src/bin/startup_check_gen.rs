@@ -8,7 +8,7 @@ use serde_json::json;
 use std::{path::PathBuf, process};
 
 fn main() {
-    let args: Vec<String> = process::args().collect();
+    let args: Vec<String> = std::env::args().collect();
     if args.len() != 5 {
         eprintln!("usage: startup_check_gen MODEL_DIR TOKENS_JSON OUT_JSON AUDIT_IDENTITY");
         process::exit(2);
