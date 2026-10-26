@@ -267,3 +267,27 @@ source bytes per auditor response #26; auditor-signed v2 is pending.
 This section supersedes the L4 scope note above for the B200 route.
 L4 evidence is retained unchanged as the historical record that motivated
 this contract (sm_89 PTX-JIT numeric drift, see `m2_ablation_analysis.md`).
+
+## M3 preparation — candidate golden export and served-fixture domain
+
+The M3 HTTP acceptance scope is frozen by the 46-entry mapping array
+(`results/golden_export_b200/mappings_v1.json`, delivered verbatim by
+external architecture consultation #30 and mechanically verified on
+receipt: 46 entries, chunk coverage 0..21 for the reverse and shuffled
+groups, frozen wrapping-u64 permutation byte-for-byte).
+
+Served fixtures (`results/golden_export_b200/fixtures_exec.json`): 22
+entries, each with text, token ids, `ids_sha256`, `golden_row`, and
+`golden_sha256`. Nineteen are exact-id fixtures whose text re-tokenizes
+under the production tokenizer to exactly the frozen corpus token
+arrays; three (slots 2, 4, 5; lengths 255, 257, 1023) are
+length-preserving substitutes carrying their own candidate goldens.
+
+Candidate goldens were exported on B200 (sm_100 native) by
+`src/bin/golden_export.rs` through the designated M2 token-ID route:
+25 rows x 2048 f32 (`golden_export.golden.f32`, matrix SHA-256
+`817c460fc1891a49b43eae043bfc6c45d2afb20e889422097b65591876107cc6`),
+per-row digests in `golden_export.golden_rows.json`. Run: 130 s on one
+B200, zero billed cost; inputs and substitute texts committed for
+provenance. Pad-token coverage input (`"<pad>"` -> id 11) verified
+against the production tokenizer path.
