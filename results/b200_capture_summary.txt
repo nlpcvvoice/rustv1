@@ -1,0 +1,20 @@
+B200 independent reference capture summary (contract b200-independent-F-v2)
+===========================================================================
+Date: 2026-10-25 (Modal B200, ephemeral)
+Engine: vLLM 0.25.0 (image digest e1c1ff1af9a15921bfa11d1d95047258c1797392cdbfa296e7639da446b23f97)
+GPU: NVIDIA B200, compute capability 10.0, sm_100 native
+success: true
+
+Goldens: ref_single_b200.f32 = 22 rows x 2048 f32 little-endian, prompts.json order
+  size 180224 bytes, sha256 37e991471ddb96033319d1213b7397b4cac7735ba55801e2aa99a3de6719ca3a
+
+Re-pass consistency (vLLM non-determinism observation, honest record):
+  pass0 vs pass1: min cosine 1.000000000, max abs diff 2.980e-08
+  pass1 vs pass2: min cosine 1.000000000, max abs diff 3.353e-08
+  bit-identical across passes: false (flash-attn scheduling non-determinism)
+  -> goldens selected from pass0 (primary); acceptance gates (cos>0.999, max_abs<=0.01)
+     are orders of magnitude above this observed jitter.
+
+Qualification: see b200_qualification/ (qualification.json, inputs, settings, inventory)
+Qualification probe: b200_qualprobe_run7.txt (pass=true)
+Acceptance run records: m2_acceptance_b200_v2_records.txt (ACCEPT_RC 0, accepted:true)

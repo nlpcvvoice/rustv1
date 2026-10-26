@@ -1,0 +1,86 @@
+{
+ "schema": "rustv1.checkpoint_inventory.v1",
+ "model_id": "nvidia/Nemotron-3-Embed-1B-BF16",
+ "files": [
+  {
+   "path": ".gitattributes",
+   "bytes": 1570,
+   "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"
+  },
+  {
+   "path": "1_Pooling/config.json",
+   "bytes": 298,
+   "sha256": "6dcf44c2f7e7878ac0ee2e992c8e7d1f6812e12724b00d1d0cb0fa3336f07f0d"
+  },
+  {
+   "path": "CONTRIBUTING.md",
+   "bytes": 2511,
+   "sha256": "bd0b6e3e1be8b2d9443f907bd44b24d0eabaf37cf66558cadb83818a7dcec78c"
+  },
+  {
+   "path": "LICENSE",
+   "bytes": 2796,
+   "sha256": "5ae76a0d16eef67e28c81bfdb0b3c8687d14e9b57094090151e7541aac457ae9"
+  },
+  {
+   "path": "NOTICE",
+   "bytes": 1381,
+   "sha256": "22f544b05a669f13a6f59920debbc86d2031c0420763c8421dcdc05f5db27f57"
+  },
+  {
+   "path": "README.md",
+   "bytes": 36297,
+   "sha256": "6e811480c966ca54fca9a5cbd0e5ae60df15244bfc70bb9db155c2b92fa23f8e"
+  },
+  {
+   "path": "THIRD_PARTY_NOTICES.md",
+   "bytes": 24774,
+   "sha256": "31aa40574e995ae5741c61970e35bc2104dde1a6fc2b29bf2fb645511667ee81"
+  },
+  {
+   "path": "config.json",
+   "bytes": 1117,
+   "sha256": "56964141409866da7ce7d2d88b5b20c44558f5e916b318ad3abd2c694b2cb5f7"
+  },
+  {
+   "path": "config_sentence_transformers.json",
+   "bytes": 261,
+   "sha256": "dc2bc223baa9e5eedd8593d1d4230210681001e7dec73ac53d89697df97079ee"
+  },
+  {
+   "path": "engine.json",
+   "bytes": 127,
+   "sha256": "35ef2d5036298153b15069462d9bed3deb945286d0a5c144fde2515e48e58c3e"
+  },
+  {
+   "path": "model.safetensors",
+   "bytes": 2281852472,
+   "sha256": "f959c3b04e66b42de280bfb97c140cb7e0bfe25e3ecb0b4464c68a8436b2d04f"
+  },
+  {
+   "path": "model.safetensors.index.json",
+   "bytes": 8936,
+   "sha256": "ff9507acb077cc9f84f3993e3b3556b2a022b8ff66ce3fc326909dfd4b550935"
+  },
+  {
+   "path": "modules.json",
+   "bytes": 350,
+   "sha256": "21ddb3037a55ebf4549eb5c1dc44c3f28f10b56ec7f1335c92fd90e5b30d88ac"
+  },
+  {
+   "path": "sentence_bert_config.json",
+   "bytes": 56,
+   "sha256": "0b1d25d4d13c72c255a7eaaf8921ca481c4cd61ad894e7209c52dc5e1ac3f3bd"
+  },
+  {
+   "path": "tokenizer.json",
+   "bytes": 17077678,
+   "sha256": "797410dfb649a5b9ba92bc4fef7dbf4022d00e73de6867c4ac199a8846439421"
+  },
+  {
+   "path": "tokenizer_config.json",
+   "bytes": 21139,
+   "sha256": "7bbb77c55282bc679b86d21a1b3953ed8d5d63aaf75f10800c20596eab30b980"
+  }
+ ]
+}

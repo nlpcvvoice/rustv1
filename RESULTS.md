@@ -240,3 +240,30 @@ Expected acceptance result:
 This section records completed L4 acceptance. It does not claim completed
 B200 acceptance, successful hosted CI execution, or cross-device bit
 identity.
+
+## M2-B200 — native sm_100 route with independent vLLM@B200 reference (contract b200-independent-F-v2)
+
+Completed 2026-10-25 on Modal B200 (ephemeral, no persistent storage).
+
+| Stage | Evidence | Result |
+|---|---|---|
+| Qualification probe (B200 identity, capability 10.0, engine version, singleton repeatability, norm gates) | `results/b200_qualprobe_run7.txt`, `results/b200_qualification/qualification.json` | pass=true |
+| Independent reference capture (vLLM 0.25.0, 22 frozen inputs, 3 passes) | `results/b200_capture_summary.txt`, `results/ref_single_b200.f32` (sha256 37e99147…) | success=true |
+| Acceptance suite (prebuilt sm_100 binary vs B200 goldens; 22 singletons, 8 closure groups, 5 recovery groups, exception groups) | `results/m2_acceptance_b200_v2_records.txt` | ACCEPT_RC 0, accepted=true |
+
+Gate outcomes: 22/22 singletons within cos>0.999 and max_abs<=0.01
+(min cosine 0.99961, max abs 0.00616); all closure/recovery/exception
+records pass; audit identity on every physical-forward record; reduced-
+precision flags false; poison and refusal groups pass.
+
+Honest non-determinism record: vLLM re-passes are not bit-identical
+(min cosine 1.000000000, max abs jitter 3.4e-08), consistent with
+flash-attn scheduling; gates are orders of magnitude above this jitter.
+
+Audit binding: interim artifact v1.1 (`audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v1.json`,
+integrator-produced, signed=false) binds the current Cargo.lock and main
+source bytes per auditor response #26; auditor-signed v2 is pending.
+
+This section supersedes the L4 scope note above for the B200 route.
+L4 evidence is retained unchanged as the historical record that motivated
+this contract (sm_89 PTX-JIT numeric drift, see `m2_ablation_analysis.md`).

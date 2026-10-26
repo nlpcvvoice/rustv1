@@ -1,0 +1,218 @@
+{
+ "schema": "rustv1.reference_capture_settings.v1",
+ "protocol_id": "b200-vllm0250-reference-v1",
+ "historical_evidence": {
+  "engine": "vllm",
+  "engine_version": "0.25.0",
+  "model": "nvidia/Nemotron-3-Embed-1B-BF16",
+  "device": "L4",
+  "results_md_pooling": "mean",
+  "results_md_normalization": "L2",
+  "diagnostic_script_samples": [
+   0,
+   5,
+   21
+  ],
+  "diagnostic_script_schedule": [
+   "uninstrumented singleton controls for samples 0, 5, 21",
+   "install worker observers",
+   "sample 0 trace singleton, then dump singleton",
+   "sample 5 trace singleton, then dump singleton",
+   "sample 21 trace singleton, then dump singleton",
+   "uninstall worker observers"
+  ],
+  "diagnostic_script_explicit_warmup_calls": 0,
+  "original_22_row_reference_capture_schedule_established": false,
+  "historical_attention_backend_established": false,
+  "historical_checkpoint_revision_established": false
+ },
+ "target": {
+  "gpu": "B200",
+  "compute_capability": [
+   10,
+   0
+  ],
+  "qualification_required": true,
+  "fallback_engine_permitted": false,
+  "fallback_backend_permitted": false
+ },
+ "engine": {
+  "distribution": "vllm",
+  "version": "0.25.0",
+  "image_binding": "externally approved qualification report containing an immutable OCI image digest",
+  "remaining_library_defaults": "bound to the exact qualified image; resolved configuration is recorded"
+ },
+ "llm_kwargs": {
+  "runner": "pooling",
+  "dtype": "bfloat16",
+  "tensor_parallel_size": 1,
+  "max_model_len": 1024,
+  "max_num_seqs": 8,
+  "max_num_batched_tokens": 4096,
+  "enforce_eager": true,
+  "enable_prefix_caching": false,
+  "enable_chunked_prefill": false,
+  "seed": 0,
+  "trust_remote_code": false,
+  "gpu_memory_utilization": 0.5,
+  "load_format": "safetensors",
+  "quantization": null,
+  "skip_tokenizer_init": false,
+  "attention_config": {
+   "backend": "FLASH_ATTN",
+   "flash_attn_version": 2
+  },
+  "pooler_config": {
+   "pooling_type": "MEAN"
+  }
+ },
+ "environment": {
+  "HF_HUB_OFFLINE": "1",
+  "TRANSFORMERS_OFFLINE": "1",
+  "TOKENIZERS_PARALLELISM": "false",
+  "VLLM_WORKER_MULTIPROC_METHOD": "spawn",
+  "VLLM_ATTENTION_BACKEND": null,
+  "VLLM_FLASH_ATTN_VERSION": null,
+  "NVIDIA_TF32_OVERRIDE": null,
+  "CUBLAS_WORKSPACE_CONFIG": null
+ },
+ "warmup": {
+  "scope": "explicit application-level warmup, after engine initialization",
+  "sequence_source": "prompts.json",
+  "sample_indices": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20,
+   21
+  ],
+  "passes": 1,
+  "logical_batch_size": 1,
+  "retain_embeddings": false,
+  "engine_internal_initialization": "not counted as application warmup"
+ },
+ "capture": {
+  "sequence_source": "prompts.json",
+  "sample_indices": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20,
+   21
+  ],
+  "passes": 3,
+  "logical_batch_size": 1,
+  "instrumentation": "none",
+  "primary_reference_pass": 0,
+  "primary_reference_file": "ref_single.f32",
+  "repeat_files": [
+   "ref_repeat_1.f32",
+   "ref_repeat_2.f32"
+  ],
+  "select_best_pass_permitted": false,
+  "candidate_dependent_recapture_permitted": false,
+  "renormalize_exported_embeddings": false,
+  "cross_pass_bit_identity_required": false
+ },
+ "output": {
+  "rows": 22,
+  "width": 2048,
+  "dtype": "IEEE754-binary32",
+  "byte_order": "little",
+  "layout": "row-major",
+  "raw_file_bytes": 180224,
+  "all_values_finite": true,
+  "norm_evaluation": "binary64",
+  "maximum_absolute_norm_error": 1e-05,
+  "archive": "tar.gz",
+  "transport": "base64 in remote string result",
+  "provenance": "JSONL"
+ },
+ "checkpoint_inventory": {
+  "delivery": "local files uploaded into the Modal image",
+  "runtime_downloads_permitted": false,
+  "volumes_permitted": false,
+  "model_root": "model",
+  "manifest_file": "checkpoint-inventory.json",
+  "manifest_schema": "rustv1.checkpoint_inventory.v1",
+  "manifest_fields": [
+   "schema",
+   "model_id",
+   "files"
+  ],
+  "file_entry_fields": [
+   "path",
+   "bytes",
+   "sha256"
+  ],
+  "path_convention": "unique ASCII POSIX relative paths, sorted lexicographically; no empty, dot, dot-dot, absolute or backslash components",
+  "inventory_scope": "every regular file under model, including weights, shard indexes, configuration, tokenizer assets and engine.json if present",
+  "symlinks_permitted": false,
+  "unlisted_files_permitted": false,
+  "digest_convention": "SHA-256 over exact file bytes, represented by 64 lowercase hexadecimal characters",
+  "manifest_identity": "SHA-256 over exact manifest bytes, externally bound by qualification"
+ },
+ "new_b200_decisions": [
+  "FLASH_ATTN version 2 is selected explicitly; its compatibility must be qualified, not assumed.",
+  "Mean pooling and normalization are explicit constructor requests.",
+  "Application warmup is one natural-order singleton pass over all 22 samples.",
+  "Capture is three natural-order singleton passes; pass zero is always the reference.",
+  "Additional constructor and environment choices are explicit and require qualification.",
+  "This protocol does not claim to reproduce undocumented historical defaults."
+ ],
+ "execution": {
+  "planned_remote_seconds": 900,
+  "timeout_seconds": 1800,
+  "min_containers": 0,
+  "max_containers": 1,
+  "scaledown_window_seconds": 60,
+  "retries": 0,
+  "remote_invocations": 1
+ },
+ "amendment_log": [
+  {
+   "date": "2026-10-25",
+   "change": "pooler_config: removed 'normalize' key (not a vllm 0.25.0 PoolerConfig field; verified via dataclass introspection on the pinned image). L2 normalization is enforced by the norm gate abs(norm-1)<=1e-5 in probe and capture.",
+   "pending_ratification": "ASTRO6 (contract owner)"
+  },
+  {
+   "date": "2026-10-25",
+   "change": "skip_tokenizer_init true->false: vllm 0.25.0 embed API requires the tokenizer even for prompt_token_ids input; tokenizer is input-side only, numerics unchanged; token-ID round-trip still verified per call",
+   "pending_ratification": "ASTRO6"
+  }
+ ]
+}
