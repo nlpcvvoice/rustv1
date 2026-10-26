@@ -1,0 +1,489 @@
+[
+ {
+  "m2_group_id": 1,
+  "adaptation": "Corpus sample 0 singleton using exact-id fixture F00.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 2,
+  "adaptation": "Corpus sample 1 singleton using exact-id fixture F01; length 2, not the long fixture.",
+  "requests": [
+   [
+    1
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 3,
+  "adaptation": "Corpus sample 2 served adaptation using F02: length-preserving 255-token substitute with its own U02 candidate golden; not original-token identity coverage.",
+  "requests": [
+   [
+    2
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 4,
+  "adaptation": "Corpus sample 3 singleton using exact-id fixture F03.",
+  "requests": [
+   [
+    3
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 5,
+  "adaptation": "Corpus sample 4 served adaptation using F04: length-preserving 257-token substitute with its own U04 candidate golden; not original-token identity coverage.",
+  "requests": [
+   [
+    4
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 6,
+  "adaptation": "Corpus sample 5 served adaptation using F05: length-preserving 1023-token stress substitute with its own U05 candidate golden. Original sample-5 token identity remains an in-process prerequisite.",
+  "requests": [
+   [
+    5
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 7,
+  "adaptation": "Corpus sample 6 singleton using exact-id fixture F06; the first 1024-token fixture.",
+  "requests": [
+   [
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 8,
+  "adaptation": "Corpus sample 7 singleton using exact-id fixture F07.",
+  "requests": [
+   [
+    7
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 9,
+  "adaptation": "Corpus sample 8 singleton using exact-id fixture F08.",
+  "requests": [
+   [
+    8
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 10,
+  "adaptation": "Corpus sample 9 singleton using exact-id fixture F09.",
+  "requests": [
+   [
+    9
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 11,
+  "adaptation": "Corpus sample 10 singleton using exact-id fixture F10.",
+  "requests": [
+   [
+    10
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 12,
+  "adaptation": "Corpus sample 11 singleton using exact-id fixture F11.",
+  "requests": [
+   [
+    11
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 13,
+  "adaptation": "Corpus sample 12 singleton using exact-id fixture F12.",
+  "requests": [
+   [
+    12
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 14,
+  "adaptation": "Corpus sample 13 singleton using exact-id fixture F13.",
+  "requests": [
+   [
+    13
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 15,
+  "adaptation": "Corpus sample 14 singleton using exact-id fixture F14.",
+  "requests": [
+   [
+    14
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 16,
+  "adaptation": "Corpus sample 15 singleton using exact-id fixture F15.",
+  "requests": [
+   [
+    15
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 17,
+  "adaptation": "Corpus sample 16 singleton using exact-id fixture F16.",
+  "requests": [
+   [
+    16
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 18,
+  "adaptation": "Corpus sample 17 singleton using exact-id fixture F17.",
+  "requests": [
+   [
+    17
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 19,
+  "adaptation": "Corpus sample 18 singleton using exact-id fixture F18.",
+  "requests": [
+   [
+    18
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 20,
+  "adaptation": "Corpus sample 19 singleton using exact-id fixture F19.",
+  "requests": [
+   [
+    19
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 21,
+  "adaptation": "Corpus sample 20 singleton using exact-id fixture F20.",
+  "requests": [
+   [
+    20
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 22,
+  "adaptation": "Corpus sample 21 singleton using exact-id fixture F21.",
+  "requests": [
+   [
+    21
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 23,
+  "adaptation": "Corpus-order samples 0 through 3 in one four-input request. F02 preserves sample-2 length and uses its own U02 golden; preserve output position association.",
+  "requests": [
+   [
+    0,
+    1,
+    2,
+    3
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 24,
+  "adaptation": "Corpus-order samples 4 through 7 in one four-input request. F04 and F05 use their own substitute goldens; preserve the 257,1023,1024,10 length vector and output position association.",
+  "requests": [
+   [
+    4,
+    5,
+    6,
+    7
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 25,
+  "adaptation": "Corpus-order samples 8 through 11 in one four-input request using exact-id fixtures; preserve order, lengths and output position association.",
+  "requests": [
+   [
+    8,
+    9,
+    10,
+    11
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 26,
+  "adaptation": "Corpus-order samples 12 through 15 in one four-input request using exact-id fixtures; preserve order, lengths and output position association.",
+  "requests": [
+   [
+    12,
+    13,
+    14,
+    15
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 27,
+  "adaptation": "Corpus-order samples 16 through 19 in one four-input request using exact-id fixtures; preserve order, lengths and output position association.",
+  "requests": [
+   [
+    16,
+    17,
+    18,
+    19
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 28,
+  "adaptation": "Corpus-order samples 20 and 21 in one two-input request using exact-id fixtures; preserve order and output position association.",
+  "requests": [
+   [
+    20,
+    21
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 29,
+  "adaptation": "Short then long: exact-id F00 followed by exact-id F06, preserving lengths 1 and 1024.",
+  "requests": [
+   [
+    0,
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 30,
+  "adaptation": "Global reverse fixture order, executed as three successive legal HTTP requests of sizes 8,8,6. Preserve order across chunks and stable substitutes F02,F04,F05 with their own goldens. This is not single-request 22-input coverage.",
+  "requests": [
+   [
+    21,
+    20,
+    19,
+    18,
+    17,
+    16,
+    15,
+    14
+   ],
+   [
+    13,
+    12,
+    11,
+    10,
+    9,
+    8,
+    7,
+    6
+   ],
+   [
+    5,
+    4,
+    3,
+    2,
+    1,
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 31,
+  "adaptation": "Frozen wrapping-u64 shuffle, used verbatim without regeneration, executed as three successive legal HTTP requests of sizes 8,8,6. Preserve stable substitutes F02,F04,F05 with their own goldens. This is not single-request 22-input coverage.",
+  "requests": [
+   [
+    3,
+    21,
+    8,
+    16,
+    1,
+    9,
+    4,
+    20
+   ],
+   [
+    7,
+    0,
+    17,
+    18,
+    15,
+    12,
+    5,
+    6
+   ],
+   [
+    11,
+    19,
+    10,
+    2,
+    13,
+    14
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 32,
+  "adaptation": "Duplicate-input request F00,F06,F00,F06. Reuse identical text and IDs at positions 0/2 and 1/3; compare every output to its fixture singleton golden and verify position association.",
+  "requests": [
+   [
+    0,
+    6,
+    0,
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 33,
+  "adaptation": "Identical-shape repeat 1 of 3: F00,F06. Execute slots 33,34,35 successively with unchanged contents, order and shapes.",
+  "requests": [
+   [
+    0,
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 34,
+  "adaptation": "Identical-shape repeat 2 of 3: F00,F06, immediately following slot 33 with unchanged contents, order and shapes.",
+  "requests": [
+   [
+    0,
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 35,
+  "adaptation": "Identical-shape repeat 3 of 3: F00,F06, immediately following slot 34 with unchanged contents, order and shapes.",
+  "requests": [
+   [
+    0,
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 36,
+  "adaptation": "Alternating-length step 1 of 6: short singleton F00. Execute slots 36 through 41 successively in their numbered order.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 37,
+  "adaptation": "Alternating-length step 2 of 6: exactly 1024-token singleton F06.",
+  "requests": [
+   [
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 38,
+  "adaptation": "Alternating-length step 3 of 6: short singleton F00.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 39,
+  "adaptation": "Alternating-length step 4 of 6: exactly 1024-token singleton F06.",
+  "requests": [
+   [
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 40,
+  "adaptation": "Alternating-length step 5 of 6: short singleton F00.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 41,
+  "adaptation": "Alternating-length step 6 of 6: exactly 1024-token singleton F06.",
+  "requests": [
+   [
+    6
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 42,
+  "adaptation": "Recovery singleton F00 immediately after input:[] is rejected as empty_batch. No intervening successful request; exclude this slot from the initial positive-mapping loop.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 43,
+  "adaptation": "Recovery singleton F00 immediately after valid-prefix F00 plus empty-string input is rejected as empty_sequence. Require no physical execution for either input of the rejected request and no intervening successful request.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 44,
+  "adaptation": "Recovery singleton F00 immediately after valid-prefix F00 plus verified exact pad text is rejected as pad_token, if such text is available. Otherwise execute immediately after the separately named valid-prefix plus empty-string substitute rejection as empty_sequence. The fallback is not pad-token coverage; exact pad-ID coverage remains in-process.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 45,
+  "adaptation": "Recovery singleton F00 immediately after valid-prefix F00 plus verified overlength text is rejected as over_length. Require no truncation, no physical execution of the valid prefix, and no intervening successful request.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ },
+ {
+  "m2_group_id": 46,
+  "adaptation": "Recovery singleton F00 immediately after non-string-input schema rejection as invalid_request. This is the served validation/recovery substitute, not OOV-token coverage; exact out-of-vocabulary ID coverage remains in-process. No intervening successful request.",
+  "requests": [
+   [
+    0
+   ]
+  ]
+ }
+]
