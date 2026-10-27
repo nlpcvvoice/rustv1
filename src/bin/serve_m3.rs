@@ -180,7 +180,7 @@ async fn run() -> Result<(), Code> {
         {
             return Err(Code::InvalidRequest);
         }
-        let mut config = Config::production(queue_capacity, vocabulary_size, engine.max_len);
+        let config = Config::production(queue_capacity, vocabulary_size, engine.max_len);
         config.validate()?;
         let tokenizer = PinnedTokenizer::load(
             &model_dir.join("tokenizer.json"),
