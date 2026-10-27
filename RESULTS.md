@@ -291,3 +291,32 @@ per-row digests in `golden_export.golden_rows.json`. Run: 130 s on one
 B200, zero billed cost; inputs and substitute texts committed for
 provenance. Pad-token coverage input (`"<pad>"` -> id 11) verified
 against the production tokenizer path.
+
+## M3 — HTTP serving acceptance (contract m3-http-independent-F-v1)
+
+Completed 2026-10-27 on Modal B200 (ephemeral, no persistent storage,
+billed cost $0).
+
+| Stage | Evidence | Result |
+|---|---|---|
+| Auditor-signed CUDA math source audit v2 | `audits/cuda_math/candle-0.9.2_cudarc-0.19.10.v2.json` (sha256 `c42efd53…`) | status=accepted, signed=true (attributed review sign-off), mechanical=true |
+| Mechanical region-boundary re-verification at integrated HEAD 39c9b31 | `audits/cuda_math/mechanical_reverification_report_final_39c9b31.json` (ALL_PASS 102/102, sha256 `cdfa17f3…`), plus evidence supplement and archive-digest reconciliation | all_pass=true |
+| HTTP acceptance run 1 + destructive policy-drift + supervised restart run 2 | `results/m3/accept_records.txt` (64 case records, 64 pass / 0 fail), `results/m3/executor_manifest_run1.jsonl` (227 records), `results/m3/executor_manifest_run2.jsonl` (7 records), `results/m3/att_run{1,2}.json` | ACCEPT_RC 0, `{"accepted":true,"pass":true}` |
+
+Gate outcomes: all 22 served fixtures over HTTP matched the frozen
+candidate goldens by exact output SHA-256 (not cosine tolerance);
+invalid-request, exception, recovery, quiesce, policy-drift poison
+(500 + post-poison refusal), and supervised-restart lifecycle cases
+all pass; every physical-forward manifest record carries the audit
+identity and profile-F math block; both run attestations record the
+same binary SHA-256.
+
+Integration fixes made during M3 acceptance (post-audit, outside the
+audited source set): unify server instance identity with the launch
+attestation (5ca5a89); quiesce admission before arming policy drift
+in the driver (2ba851d). Both were cross-component consistency bugs
+in the HTTP stack, caught by the acceptance gates themselves.
+
+Scope note: HTTP certification is served-fixture numerical
+acceptance. Throughput/latency baselining is a separate pending
+M3-bench measurement.

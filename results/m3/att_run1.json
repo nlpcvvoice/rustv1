@@ -1,0 +1,16 @@
+{
+  "audit_sha256": "c42efd534533ceecab87fe959dc85155711e0dd356c6497b8a5a17dfbd9a5013",
+  "binary_sha256": "c137f8025812047dfe790bac388b8008afbf0075ea4a0b3f464fb6ce8b6264e9",
+  "build_identity": {
+    "cuda_compute_cap": "sm_100",
+    "nvcc_version": "Cuda compilation tools, release 12.8, V12.8.93",
+    "rustc_version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "target_features": "fxsr,sse,sse2"
+  },
+  "instance_id": "4281-1793117461.576476Z",
+  "pid": 4281,
+  "schema": "rustv1.server_launch_attestation.v1",
+  "settings_sha256": "44933c01ef168e6d4db037a79f9c20cc047766395d6ce819443128ec14f0517c",
+  "start_utc": "1793117461.576476Z",
+  "startup_check_sha256": "f5bfbfdb835470a60e651cfc7cbf3a50ba06616094bbf118dd225b834d3ec5ca"
+}
