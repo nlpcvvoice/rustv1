@@ -57,6 +57,7 @@ pub struct Config {
     pub shutdown_grace: Duration,
     pub control_timeout: Duration,
     pub drain_seconds: u64,
+    pub instance: Option<String>,
     pub transport: TransportConfig,
 }
 
@@ -82,6 +83,7 @@ impl Config {
                 idle_timeout: Duration::from_secs(90),
                 connection_timeout: Duration::from_secs(90),
             },
+            instance: None,
         }
     }
 
@@ -1003,7 +1005,10 @@ impl Service {
                 forward_calls: 0,
                 startup_output_sha256: None,
             }),
-            instance: format!("{}-{stamp}", std::process::id()),
+            instance: config
+                .instance
+                .clone()
+                .unwrap_or_else(|| format!("{}-{stamp}", std::process::id())),
             launch_attestation: Mutex::new(None),
         });
         let (tx, rx) = mpsc::channel(config.queue_capacity);

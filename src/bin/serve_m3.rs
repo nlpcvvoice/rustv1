@@ -180,7 +180,7 @@ async fn run() -> Result<(), Code> {
         {
             return Err(Code::InvalidRequest);
         }
-        let config = Config::production(queue_capacity, vocabulary_size, engine.max_len);
+        let mut config = Config::production(queue_capacity, vocabulary_size, engine.max_len);
         config.validate()?;
         let tokenizer = PinnedTokenizer::load(
             &model_dir.join("tokenizer.json"),
@@ -197,7 +197,7 @@ async fn run() -> Result<(), Code> {
             serde_json::from_slice(&check_bytes).map_err(|_| Code::InvalidRequest)?;
         Ok::<_, Code>((config, Arc::new(tokenizer), check))
     });
-    let (config, tokenizer, check) = timeout(Duration::from_secs(60), load)
+    let (mut config, tokenizer, check) = timeout(Duration::from_secs(60), load)
         .await
         .map_err(|_| Code::DeadlineExceeded)?
         .map_err(|_| Code::InvalidRequest)??;
@@ -220,6 +220,7 @@ async fn run() -> Result<(), Code> {
         std::process::id(),
         start_utc.replace([':', '-'], "")
     );
+    config.instance = Some(instance_id.clone());
     let build_identity = json!({
         "rustc_version": env!("RV1_BUILD_RUSTC_VERSION"),
         "nvcc_version": env!("RV1_BUILD_NVCC_VERSION"),
