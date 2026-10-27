@@ -1294,6 +1294,13 @@ async fn execute_run1(
     }
 
     // A6: Destructive Policy Drift and Supervised Restart
+    // The server state machine requires quiesced admission before arming
+    // the drift injection (http_serve ControlCommand gate).
+    runner
+        .control
+        .call("quiesce", None)
+        .await
+        .context("quiesce before policy drift")?;
     reporter.record(
         "control.policy_drift_poison",
         runner
