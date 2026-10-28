@@ -320,3 +320,44 @@ in the HTTP stack, caught by the acceptance gates themselves.
 Scope note: HTTP certification is served-fixture numerical
 acceptance. Throughput/latency baselining is a separate pending
 M3-bench measurement.
+
+## M3-bench — B=1 throughput/latency baseline (B200, same audited bytes)
+
+Closed-loop same-host client, 22-fixture mixed tier (avg ISL ~215) and
+ISL-1024 tier, 60 s measured per level, 0 errors at every level.
+Captured 2026-10-27 (mixed tier complete; long tier C=1 only —
+saturation already established, sweep intentionally stopped).
+
+| Concurrency | req/s | tokens/s | p50 ms | p90 ms | p99 ms |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 78 | 16.7k | 7.4 | 39.0 | 39.9 |
+| 2 | 82 | 17.7k | 17.6 | 44.8 | 55.0 |
+| 4 | 83 | 17.8k | 42.6 | 72.2 | 89.0 |
+| 8 | 82 | 17.7k | 93.9 | 124.1 | 149.7 |
+| 16 | 82 | 17.7k | 192.5 | 222.2 | 248.6 |
+| 32 | 83 | 17.7k | 388.7 | 425.7 | 468.9 |
+| 64 | 83 | 17.7k | 774.0 | 824.4 | 888.8 |
+
+ISL-1024, C=1: 25.8 req/s, 26.4k tokens/s, p50 38.6 ms.
+
+Reading: throughput saturates at ~83 req/s from C=2 upward — the
+contract-mandated serial B=1 executor is the ceiling; added
+concurrency only queues latency. This is the measured baseline the
+batching work is measured against.
+
+## M4 (in progress) — server-side batching integration
+
+Batched executor, bounded FIFO batch scheduler, and server wiring
+authored by the external architect (#32a / #32a-continuation rounds)
+were integrated verbatim at 48a632c; rustfmt/clippy 1.99.1
+compliance applied via the cifix loop; one integration fix at 5b9e1ad
+(`Atomic::fetch_update` -> `try_update` rename; `ExecutionRow::validate`
+gated for CPU-only builds). All gates green: Modal m3verify
+(FMT/CPU_CHECK/CPU_TEST/CUDA_CHECK/CLIPPY) and GitHub CI (6 jobs).
+
+Not yet accepted: B>1 acceptance requires the `accept_m4` driver,
+batch-capable golden export, and batched-route goldens (requested in
+the #32b round), plus an audit v3 renewal — audit v2 explicitly
+covers physical B=1 only. Prescope: 8 model.rs regions to renew,
+2 m2_route.rs regions to re-anchor; precision.rs and cuda_math.rs
+bytes unchanged and remain covered.
