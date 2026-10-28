@@ -127,6 +127,7 @@ pub struct ExecutionRow {
 }
 
 impl ExecutionRow {
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
     fn validate(&self) -> Result<()> {
         if let Some(case) = &self.case_id {
             ensure!(
