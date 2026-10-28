@@ -1,5 +1,14 @@
-//! CUDA-independent M3 HTTP serving with A1–A6 and B1–B3 conformance.
+//! HTTP serving with a single backend owner and bounded FIFO batch assembly.
+//!
+//! Backend::forward remains the independent-sequence startup/compatibility
+//! route. Batched serving explicitly calls Backend::forward_batch.
+//!
+//! Terminal executors are never reopened in-process. The process supervisor
+//! must terminate the old process before launching its replacement.
+//!
+//! This replacement has not been build- or CUDA-tested in this consultation.
 
+use crate::model::{BatchedExecution, ExecutionRow};
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, FromRequest, Request, State},
@@ -30,7 +39,8 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     net::{TcpListener, TcpStream},
-    sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore},
+    runtime::Runtime,
+    sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, Semaphore},
     time::{sleep, timeout, timeout_at, Instant as TokioInstant, Sleep},
 };
 
@@ -38,9 +48,16 @@ pub const MODEL_ID: &str = "nvidia/Nemotron-3-Embed-1B";
 pub const EMBEDDING_WIDTH: usize = 2048;
 pub const BODY_LIMIT: usize = 1_048_576;
 pub const PAD_ID: u32 = 11;
+pub const MAX_HTTP_INPUTS: usize = 8;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+fn label_valid(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 128
+        && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +76,9 @@ pub struct Config {
     pub drain_seconds: u64,
     pub instance: Option<String>,
     pub transport: TransportConfig,
+    /// None retains the independent compatibility server for existing callers.
+    /// The production batched binary always supplies Some(policy_bound_limits).
+    pub batching: Option<BatchedExecution>,
 }
 
 impl Config {
@@ -68,7 +88,7 @@ impl Config {
             tokenizer_capacity: 4,
             queue_capacity,
             max_body_bytes: BODY_LIMIT,
-            max_sequence_tokens: limit.min(1024),
+            max_sequence_tokens: limit,
             vocabulary_size,
             body_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(60),
@@ -76,6 +96,7 @@ impl Config {
             shutdown_grace: Duration::from_secs(90),
             control_timeout: Duration::from_secs(10),
             drain_seconds: 30,
+            instance: None,
             transport: TransportConfig {
                 max_connections: 128,
                 header_timeout: Duration::from_secs(90),
@@ -83,24 +104,26 @@ impl Config {
                 idle_timeout: Duration::from_secs(90),
                 connection_timeout: Duration::from_secs(90),
             },
-            instance: None,
+            batching: None,
         }
     }
 
     pub fn validate(&self) -> Result<(), Code> {
-        let capacities = [
+        if [
             self.admission_capacity,
             self.tokenizer_capacity,
             self.queue_capacity,
             self.transport.max_connections,
-        ];
-        if capacities.iter().any(|&n| n == 0 || n > 4096)
+        ]
+        .iter()
+        .any(|&n| n == 0 || n > 4096)
             || self.tokenizer_capacity > self.admission_capacity
             || self.max_body_bytes == 0
             || self.max_body_bytes > BODY_LIMIT
             || self.max_sequence_tokens == 0
             || self.max_sequence_tokens > 1024
-            || self.vocabulary_size <= usize::try_from(PAD_ID).unwrap_or(usize::MAX)
+            || self.vocabulary_size <= PAD_ID as usize
+            || self.drain_seconds == 0
             || [
                 self.body_timeout,
                 self.request_timeout,
@@ -114,8 +137,16 @@ impl Config {
             ]
             .iter()
             .any(Duration::is_zero)
+            || self.instance.as_deref().is_some_and(|s| !label_valid(s))
         {
             return Err(Code::InvalidRequest);
+        }
+        if let Some(batch) = &self.batching {
+            batch.validate().map_err(|_| Code::InvalidRequest)?;
+            // Every otherwise legal eight-input HTTP request must fit intact.
+            if !batch.fits(MAX_HTTP_INPUTS, self.max_sequence_tokens) {
+                return Err(Code::InvalidRequest);
+            }
         }
         Ok(())
     }
@@ -262,7 +293,7 @@ impl RequestInput {
         if texts.is_empty() {
             return Err(Code::EmptyBatch);
         }
-        if texts.len() > 8 {
+        if texts.len() > MAX_HTTP_INPUTS {
             return Err(Code::InvalidRequest);
         }
         if texts.iter().any(|text| text.trim().is_empty()) {
@@ -327,7 +358,7 @@ fn success(rows: Vec<Vec<f32>>, encoding: Encoding, tokens: usize) -> Response {
             embedding: match encoding {
                 Encoding::Float => WireEmbedding::Float(row),
                 Encoding::Base64 => {
-                    let bytes: Vec<u8> = row.iter().flat_map(|value| value.to_le_bytes()).collect();
+                    let bytes: Vec<u8> = row.iter().flat_map(|v| v.to_le_bytes()).collect();
                     WireEmbedding::Base64(STANDARD.encode(bytes))
                 }
             },
@@ -390,8 +421,8 @@ pub struct PinnedTokenizer {
 impl PinnedTokenizer {
     pub fn load(path: &Path, expected_sha256: &str, vocab_size: usize) -> Result<Self, Code> {
         let bytes = std::fs::read(path).map_err(|_| Code::InvalidRequest)?;
-        let actual = format!("{:x}", Sha256::digest(&bytes));
-        if expected_sha256.len() != 64 || actual != expected_sha256 {
+        if expected_sha256.len() != 64 || format!("{:x}", Sha256::digest(&bytes)) != expected_sha256
+        {
             return Err(Code::InvalidRequest);
         }
         let tokenizer =
@@ -402,7 +433,7 @@ impl PinnedTokenizer {
         if tokenizer
             .get_vocab(true)
             .values()
-            .any(|&id| usize::try_from(id).map_or(true, |converted| converted >= vocab_size))
+            .any(|&id| usize::try_from(id).map_or(true, |n| n >= vocab_size))
         {
             return Err(Code::OutOfVocabulary);
         }
@@ -423,7 +454,7 @@ pub fn validate_tokens(batches: &[Vec<u32>], config: &Config) -> Result<usize, C
     if batches.is_empty() {
         return Err(Code::EmptyBatch);
     }
-    if batches.len() > 8 {
+    if batches.len() > MAX_HTTP_INPUTS {
         return Err(Code::InvalidRequest);
     }
     let mut total = 0usize;
@@ -438,7 +469,7 @@ pub fn validate_tokens(batches: &[Vec<u32>], config: &Config) -> Result<usize, C
             if id == PAD_ID {
                 return Err(Code::PadToken);
             }
-            if usize::try_from(id).map_or(true, |converted| converted >= config.vocabulary_size) {
+            if usize::try_from(id).map_or(true, |n| n >= config.vocabulary_size) {
                 return Err(Code::OutOfVocabulary);
             }
         }
@@ -454,12 +485,12 @@ pub fn validate_output(rows: &[Vec<f32>], count: usize) -> Result<(), Code> {
         return Err(Code::InferenceFailed);
     }
     for row in rows {
-        if row.len() != EMBEDDING_WIDTH || row.iter().any(|value| !value.is_finite()) {
+        if row.len() != EMBEDDING_WIDTH || row.iter().any(|v| !v.is_finite()) {
             return Err(Code::InferenceFailed);
         }
         let norm = row
             .iter()
-            .map(|&value| f64::from(value).powi(2))
+            .map(|&v| f64::from(v).powi(2))
             .sum::<f64>()
             .sqrt();
         if !norm.is_finite() || (norm - 1.0).abs() > 1e-5 {
@@ -472,11 +503,10 @@ pub fn validate_output(rows: &[Vec<f32>], count: usize) -> Result<(), Code> {
 pub fn exact_f32(rows: &[Vec<f32>], golden: &[Vec<f32>]) -> bool {
     validate_output(rows, golden.len()).is_ok()
         && validate_output(golden, rows.len()).is_ok()
-        && rows.iter().zip(golden).all(|(left, right)| {
-            left.iter()
-                .zip(right)
-                .all(|(left, right)| left.to_bits() == right.to_bits())
-        })
+        && rows
+            .iter()
+            .zip(golden)
+            .all(|(a, b)| a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits()))
 }
 
 fn output_digest(rows: &[Vec<f32>]) -> String {
@@ -486,15 +516,22 @@ fn output_digest(rows: &[Vec<f32>]) -> String {
             digest.update(value.to_le_bytes());
         }
     }
-    digest
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    format!("{:x}", digest.finalize())
 }
 
 pub trait Backend: 'static {
+    /// Independent-sequence route, including startup checks.
     fn forward(&mut self, batches: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Code>;
+
+    /// Exactly one physical batch. No default singleton-loop fallback.
+    fn forward_batch(
+        &mut self,
+        _batches: &[Vec<u32>],
+        _associations: &[ExecutionRow],
+    ) -> Result<Vec<Vec<f32>>, Code> {
+        Err(Code::InferenceFailed)
+    }
+
     fn inject_policy_drift(&mut self) -> Result<(), Code>;
     fn restore_policy(&mut self) -> Result<(), Code>;
 }
@@ -535,18 +572,32 @@ struct Core {
     worker_alive: bool,
     expected_exit: bool,
     admission: AdmissionMode,
+    /// True only after the all-admission-permits quiescence barrier.
+    quiescent: bool,
     armed: bool,
+    /// Logical requests submitted to the backend, excluding startup.
     forward_calls: u64,
     startup_output_sha256: Option<String>,
 }
 
 struct Shared {
     core: Mutex<Core>,
-    instance: String,
+    config: Arc<Config>,
     launch_attestation: Mutex<Option<Value>>,
+    terminal: watch::Sender<bool>,
+    /// On an operational failure, GPU completion may be unknown. Keep these
+    /// permits until process termination instead of pretending work drained.
+    quarantined: Mutex<Vec<Arc<OwnedSemaphorePermit>>>,
 }
 
 impl Shared {
+    fn instance(&self) -> &str {
+        self.config
+            .instance
+            .as_deref()
+            .expect("instance initialized before spawn")
+    }
+
     fn reject(core: &Core) -> Option<Code> {
         match core.state {
             Lifecycle::Poisoned | Lifecycle::Retired => Some(Code::ExecutorPoisoned),
@@ -555,17 +606,40 @@ impl Shared {
         }
     }
 
+    fn signal_terminal(&self) {
+        self.terminal.send_replace(true);
+    }
+
     fn retire(&self) {
-        let mut core = lock(&self.core);
-        if !core.state.terminal() {
-            core.state = Lifecycle::Retired;
+        {
+            let mut core = lock(&self.core);
+            if !core.state.terminal() {
+                core.state = Lifecycle::Retired;
+            }
+            core.admission = AdmissionMode::Quiesced;
         }
+        self.signal_terminal();
     }
 
     fn poison(&self) {
-        let mut core = lock(&self.core);
-        if !core.state.terminal() {
-            core.state = Lifecycle::Poisoned;
+        {
+            let mut core = lock(&self.core);
+            if !core.state.terminal() {
+                core.state = Lifecycle::Poisoned;
+            }
+            core.admission = AdmissionMode::Quiesced;
+        }
+        self.signal_terminal();
+    }
+}
+
+async fn terminal_notice(receiver: &mut watch::Receiver<bool>) {
+    loop {
+        if *receiver.borrow_and_update() {
+            return;
+        }
+        if receiver.changed().await.is_err() {
+            return;
         }
     }
 }
@@ -601,7 +675,7 @@ impl Logger {
             event: "request_complete",
             request_id: id,
             route: "embeddings",
-            status: code.map_or(200, |code| code.status().as_u16()),
+            status: code.map_or(200, |c| c.status().as_u16()),
             code,
             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
         };
@@ -622,12 +696,22 @@ enum Phase {
     Expired,
 }
 
+struct JobState {
+    phase: Phase,
+    error: Option<Code>,
+}
+
 struct Job {
+    request_id: u64,
+    case_id: Option<String>,
     batches: Vec<Vec<u32>>,
+    inserted: Instant,
     deadline: Instant,
-    phase: Arc<Mutex<Phase>>,
+    state: Arc<Mutex<JobState>>,
     reply: oneshot::Sender<Result<Vec<Vec<f32>>, Code>>,
-    _admission: Arc<OwnedSemaphorePermit>,
+    admission: Arc<OwnedSemaphorePermit>,
+    /// Counts logical waiting requests, including scheduler-local assembly.
+    queue_slot: Option<OwnedSemaphorePermit>,
 }
 
 enum Message {
@@ -643,6 +727,7 @@ enum Message {
 #[derive(Clone)]
 pub struct BackendHandle {
     tx: mpsc::Sender<Message>,
+    queue_slots: Arc<Semaphore>,
     shared: Arc<Shared>,
 }
 
@@ -657,43 +742,90 @@ impl BackendHandle {
 
     async fn infer(
         &self,
+        request_id: u64,
+        case_id: Option<String>,
         batches: Vec<Vec<u32>>,
         deadline: Instant,
         admission: Arc<OwnedSemaphorePermit>,
     ) -> Result<Vec<Vec<f32>>, Code> {
-        let phase = Arc::new(Mutex::new(Phase::Queued));
-        let (reply, receiver) = oneshot::channel();
-        let job = Job {
-            batches,
-            deadline,
-            phase: phase.clone(),
-            reply,
-            _admission: admission,
-        };
-        self.tx
-            .try_send(Message::Infer(job))
-            .map_err(|error| match error {
-                mpsc::error::TrySendError::Full(_) => Code::QueueFull,
-                mpsc::error::TrySendError::Closed(_) => {
-                    self.shared.poison();
-                    Code::ExecutorPoisoned
-                }
-            })?;
-
-        match timeout_at(TokioInstant::from_std(deadline), receiver).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => {
-                self.shared.poison();
-                Err(Code::ExecutorPoisoned)
+        let state = Arc::new(Mutex::new(JobState {
+            phase: Phase::Queued,
+            error: None,
+        }));
+        let (reply, mut receiver) = oneshot::channel();
+        let mut terminal = self.shared.terminal.subscribe();
+        {
+            // Serialize insertion timestamps with actual FIFO insertion and
+            // retirement. Already-admitted work may enqueue during draining.
+            let core = lock(&self.shared.core);
+            if core.state.terminal() || !core.worker_alive {
+                return Err(Code::ExecutorPoisoned);
             }
-            Err(_) => {
-                let mut core = lock(&self.shared.core);
-                let mut phase = lock(&phase);
-                if *phase == Phase::Running && !core.state.terminal() {
-                    core.state = Lifecycle::Retired;
+            if Instant::now() >= deadline {
+                return Err(Code::DeadlineExceeded);
+            }
+            let queue_slot = self
+                .queue_slots
+                .clone()
+                .try_acquire_owned()
+                .map_err(|_| Code::QueueFull)?;
+            let job = Job {
+                request_id,
+                case_id,
+                batches,
+                inserted: Instant::now(),
+                deadline,
+                state: state.clone(),
+                reply,
+                admission,
+                queue_slot: Some(queue_slot),
+            };
+            self.tx
+                .try_send(Message::Infer(job))
+                .map_err(|error| match error {
+                    mpsc::error::TrySendError::Full(_) => Code::QueueFull,
+                    mpsc::error::TrySendError::Closed(_) => Code::ExecutorPoisoned,
+                })?;
+        }
+
+        tokio::select! {
+            biased;
+            result = &mut receiver => {
+                match result {
+                    Ok(result) => result,
+                    Err(_) => {
+                        self.shared.poison();
+                        Err(Code::ExecutorPoisoned)
+                    }
                 }
-                if *phase != Phase::Done {
-                    *phase = Phase::Expired;
+            }
+            _ = terminal_notice(&mut terminal) => {
+                let _core = lock(&self.shared.core);
+                let mut state = lock(&state);
+                let code = state.error.unwrap_or(Code::ExecutorPoisoned);
+                if state.phase == Phase::Queued {
+                    state.phase = Phase::Expired;
+                    state.error = Some(code);
+                }
+                Err(code)
+            }
+            _ = sleep(deadline.saturating_duration_since(Instant::now())) => {
+                let running = {
+                    let mut core = lock(&self.shared.core);
+                    let mut state = lock(&state);
+                    let running = state.phase == Phase::Running;
+                    if running && !core.state.terminal() {
+                        core.state = Lifecycle::Retired;
+                        core.admission = AdmissionMode::Quiesced;
+                    }
+                    if state.phase != Phase::Done {
+                        state.phase = Phase::Expired;
+                        state.error = Some(Code::DeadlineExceeded);
+                    }
+                    running
+                };
+                if running {
+                    self.shared.signal_terminal();
                 }
                 Err(Code::DeadlineExceeded)
             }
@@ -730,6 +862,7 @@ pub struct App {
     tokenizer: Arc<dyn TextTokenizer>,
     admission: Arc<Semaphore>,
     tokenizers: Arc<Semaphore>,
+    controls: Arc<tokio::sync::Mutex<()>>,
     logger: Logger,
     next_request: Arc<AtomicU64>,
 }
@@ -763,6 +896,7 @@ impl App {
             core.state = Lifecycle::Draining;
         }
         core.admission = AdmissionMode::Quiesced;
+        core.quiescent = false;
     }
 
     pub fn install_launch_attestation(&self, mut value: Value) -> Result<(), Code> {
@@ -779,7 +913,12 @@ impl App {
         if slot.is_some() {
             return Err(Code::InvalidRequest);
         }
-        value["instance_id"] = json!(self.backend.shared.instance);
+        if value.get("instance_id").is_some()
+            && value["instance_id"].as_str() != Some(self.backend.shared.instance())
+        {
+            return Err(Code::InvalidRequest);
+        }
+        value["instance_id"] = json!(self.backend.shared.instance());
         value["startup"] = json!({
             "completed": true,
             "comparison": "exact_f32_bits",
@@ -803,7 +942,8 @@ impl App {
             return Err(code);
         }
         if self.backend.tx.is_closed() {
-            core.state = Lifecycle::Poisoned;
+            drop(core);
+            self.backend.shared.poison();
             return Err(Code::ExecutorPoisoned);
         }
         if matches!(core.admission, AdmissionMode::Quiesced) {
@@ -814,6 +954,7 @@ impl App {
             .clone()
             .try_acquire_owned()
             .map_err(|_| Code::QueueFull)?;
+        core.quiescent = false;
         if matches!(core.admission, AdmissionMode::One) {
             core.admission = AdmissionMode::Quiesced;
         }
@@ -822,13 +963,18 @@ impl App {
 
     async fn request(
         &self,
+        id: u64,
         request: Request,
         started: Instant,
         permit: Arc<OwnedSemaphorePermit>,
     ) -> Result<Response, Code> {
         let deadline = started + self.config.request_timeout;
+        let case_id = request
+            .headers()
+            .get("x-acceptance-case-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
         check_media(request.headers())?;
-
         let read_budget = self
             .config
             .body_timeout
@@ -850,7 +996,6 @@ impl App {
         }
         let encoding = Encoding::parse(parsed.encoding_format)?;
         let texts = parsed.input.texts()?;
-
         let tokenizer_permit = timeout_at(
             TokioInstant::from_std(deadline),
             self.tokenizers.clone().acquire_owned(),
@@ -864,46 +1009,67 @@ impl App {
         let blocking_admission = permit.clone();
         let work = tokio::task::spawn_blocking(move || {
             let _tokenizer_permit = tokenizer_permit;
-            let _admission_permit = blocking_admission;
+            let _admission = blocking_admission;
             let batches = texts
                 .iter()
                 .map(|text| tokenizer.encode(text))
                 .collect::<Result<Vec<_>, _>>()?;
             let tokens = validate_tokens(&batches, &config)?;
+            if let Some(policy) = &config.batching {
+                let s = batches.iter().map(Vec::len).max().ok_or(Code::EmptyBatch)?;
+                if !policy.fits(batches.len(), s) {
+                    return Err(Code::InvalidRequest);
+                }
+            }
             Ok::<_, Code>((batches, tokens))
         });
         let (batches, tokens) = timeout_at(TokioInstant::from_std(deadline), work)
             .await
             .map_err(|_| Code::DeadlineExceeded)?
             .map_err(|_| Code::InvalidRequest)??;
-
         if Instant::now() >= deadline {
             return Err(Code::DeadlineExceeded);
         }
-        let rows = self.backend.infer(batches, deadline, permit).await?;
+        let rows = self
+            .backend
+            .infer(id, case_id, batches, deadline, permit)
+            .await?;
+        if Instant::now() >= deadline {
+            return Err(Code::DeadlineExceeded);
+        }
         Ok(success(rows, encoding, tokens))
     }
 
     pub async fn control(&self, command: ControlCommand) -> Result<Observation, Code> {
+        // Serialize the complete quiescence barrier with all control commands.
+        let deadline = TokioInstant::now() + self.config.control_timeout;
+        let _guard = timeout_at(deadline, self.controls.lock())
+            .await
+            .map_err(|_| Code::DeadlineExceeded)?;
+        let mut all = None;
         if command == ControlCommand::Quiesce {
             {
                 let mut core = lock(&self.backend.shared.core);
                 core.admission = AdmissionMode::Quiesced;
+                core.quiescent = false;
             }
             let count =
                 u32::try_from(self.config.admission_capacity).map_err(|_| Code::InvalidRequest)?;
-            let all = timeout(
-                self.config.control_timeout,
-                self.admission.clone().acquire_many_owned(count),
-            )
-            .await
-            .map_err(|_| Code::DeadlineExceeded)?
-            .map_err(|_| Code::NotReady)?;
-            drop(all);
+            all = Some(
+                timeout_at(deadline, self.admission.clone().acquire_many_owned(count))
+                    .await
+                    .map_err(|_| Code::DeadlineExceeded)?
+                    .map_err(|_| Code::NotReady)?,
+            );
+            lock(&self.backend.shared.core).quiescent = true;
         }
-        self.backend
-            .command(command, self.config.control_timeout)
-            .await
+        let remaining = deadline.saturating_duration_since(TokioInstant::now());
+        if remaining.is_zero() {
+            return Err(Code::DeadlineExceeded);
+        }
+        let result = self.backend.command(command, remaining).await;
+        drop(all);
+        result
     }
 }
 
@@ -912,19 +1078,15 @@ async fn correlate(State(app): State<App>, request: Request, next: Next) -> Resp
     let count = values.iter().count();
     let case = values.iter().next().cloned();
     let valid = count <= 1
-        && case.as_ref().is_none_or(|value| {
-            value.to_str().is_ok_and(|text| {
-                !text.is_empty()
-                    && text.len() <= 128
-                    && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-            })
-        });
+        && case
+            .as_ref()
+            .is_none_or(|v| v.to_str().is_ok_and(label_valid));
     let mut response = if valid {
         next.run(request).await
     } else {
         Code::InvalidRequest.into_response()
     };
-    if let Ok(instance) = app.backend.shared.instance.parse() {
+    if let Ok(instance) = app.backend.shared.instance().parse() {
         response.headers_mut().insert("x-rv1-instance-id", instance);
     }
     if valid {
@@ -938,19 +1100,25 @@ async fn correlate(State(app): State<App>, request: Request, next: Next) -> Resp
 async fn readyz(State(app): State<App>) -> Response {
     if app.is_ready() {
         StatusCode::OK.into_response()
+    } else if matches!(app.lifecycle(), Lifecycle::Retired | Lifecycle::Poisoned) {
+        Code::ExecutorPoisoned.into_response()
     } else {
-        let code = if matches!(app.lifecycle(), Lifecycle::Retired | Lifecycle::Poisoned) {
-            Code::ExecutorPoisoned
-        } else {
-            Code::NotReady
-        };
-        code.into_response()
+        Code::NotReady.into_response()
     }
 }
 
 async fn embeddings(State(app): State<App>, request: Request) -> Response {
     let started = Instant::now();
-    let id = app.next_request.fetch_add(1, Ordering::Relaxed);
+    let id = match app
+        .next_request
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+    {
+        Ok(id) => id,
+        Err(_) => {
+            app.backend.shared.poison();
+            return Code::ExecutorPoisoned.into_response();
+        }
+    };
     let permit = match app.admit() {
         Ok(permit) => permit,
         Err(code) => {
@@ -958,15 +1126,25 @@ async fn embeddings(State(app): State<App>, request: Request) -> Response {
             return code.into_response();
         }
     };
-
+    // A disconnected HTTP client does not cancel admission-accounted work.
     let task = tokio::spawn(async move {
-        let result = app.request(request, started, permit).await;
+        let mut terminal = app.backend.shared.terminal.subscribe();
+        let result = tokio::select! {
+            biased;
+            result = app.request(id, request, started, permit) => result,
+            _ = terminal_notice(&mut terminal) => Err(Code::ExecutorPoisoned),
+        };
         app.logger
             .complete(id, started, result.as_ref().err().copied());
         result.unwrap_or_else(IntoResponse::into_response)
     });
-    task.await
-        .unwrap_or_else(|_| Code::InferenceFailed.into_response())
+    let mut response = task
+        .await
+        .unwrap_or_else(|_| Code::InferenceFailed.into_response());
+    if let Ok(value) = id.to_string().parse() {
+        response.headers_mut().insert("x-rv1-request-id", value);
+    }
+    response
 }
 
 pub struct Service {
@@ -977,7 +1155,7 @@ pub struct Service {
 
 impl Service {
     pub fn spawn<B, F>(
-        config: Config,
+        mut config: Config,
         tokenizer: Arc<dyn TextTokenizer>,
         logger: Logger,
         check: StartupCheck,
@@ -987,39 +1165,56 @@ impl Service {
         B: Backend,
         F: FnOnce() -> Result<B, Code> + Send + 'static,
     {
+        if config.instance.is_none() {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| Code::InvalidRequest)?
+                .as_nanos();
+            config.instance = Some(format!("{}-{stamp}", std::process::id()));
+        }
         config.validate()?;
-        validate_tokens(&check.tokens, &config)?;
+        if check.tokens.is_empty() || check.tokens.len() > 4096 {
+            return Err(Code::InvalidRequest);
+        }
+        // Startup artifacts are not HTTP requests and may contain >8 rows.
+        for row in &check.tokens {
+            validate_tokens(std::slice::from_ref(row), &config)?;
+        }
         validate_output(&check.embeddings, check.tokens.len())?;
-
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| Code::InvalidRequest)?
-            .as_nanos();
+        let config = Arc::new(config);
+        let (terminal, _) = watch::channel(false);
         let shared = Arc::new(Shared {
             core: Mutex::new(Core {
                 state: Lifecycle::Starting,
                 worker_alive: false,
                 expected_exit: false,
                 admission: AdmissionMode::Open,
+                quiescent: false,
                 armed: false,
                 forward_calls: 0,
                 startup_output_sha256: None,
             }),
-            instance: config
-                .instance
-                .clone()
-                .unwrap_or_else(|| format!("{}-{stamp}", std::process::id())),
+            config: config.clone(),
             launch_attestation: Mutex::new(None),
+            terminal,
+            quarantined: Mutex::new(Vec::new()),
         });
-        let (tx, rx) = mpsc::channel(config.queue_capacity);
+        // Inference queue slots are separately counted. The extra channel
+        // slots accommodate a serialized control and a stop message.
+        let (tx, rx) = mpsc::channel(config.queue_capacity + 2);
+        let queue_slots = Arc::new(Semaphore::new(config.queue_capacity));
         let (startup_tx, startup_rx) = oneshot::channel();
         let owner_shared = shared.clone();
         let worker = thread::Builder::new()
-            .name("m3-executor-owner".into())
+            .name("batched-executor-owner".into())
             .spawn(move || {
                 let _exit = WorkerExit(owner_shared.clone());
                 let mut startup_tx = Some(startup_tx);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_time()
+                        .build()
+                        .map_err(|_| Code::InferenceFailed)?;
                     let mut backend = factory()?;
                     let output = backend.forward(&check.tokens)?;
                     if !exact_f32(&output, &check.embeddings) {
@@ -1037,7 +1232,7 @@ impl Service {
                     if let Some(sender) = startup_tx.take() {
                         let _ = sender.send(Ok(()));
                     }
-                    worker_loop(&mut backend, rx, &owner_shared);
+                    worker_loop(&mut backend, rx, &owner_shared, &runtime);
                     Ok::<(), Code>(())
                 }));
                 if !matches!(result, Ok(Ok(()))) {
@@ -1048,15 +1243,19 @@ impl Service {
                 }
             })
             .map_err(|_| Code::InferenceFailed)?;
-        let config = Arc::new(config);
         let app = App {
             admission: Arc::new(Semaphore::new(config.admission_capacity)),
             tokenizers: Arc::new(Semaphore::new(config.tokenizer_capacity)),
+            controls: Arc::new(tokio::sync::Mutex::new(())),
             config,
             tokenizer,
             logger,
             next_request: Arc::new(AtomicU64::new(1)),
-            backend: BackendHandle { tx, shared },
+            backend: BackendHandle {
+                tx,
+                queue_slots,
+                shared,
+            },
         };
         Ok(Self {
             app,
@@ -1082,42 +1281,35 @@ impl Service {
 
     pub async fn shutdown(&mut self) -> Result<(), Code> {
         self.app.begin_drain();
-        let deadline = TokioInstant::now() + Duration::from_secs(self.app.config.drain_seconds);
+        let budget =
+            Duration::from_secs(self.app.config.drain_seconds).min(self.app.config.shutdown_grace);
+        let deadline = TokioInstant::now() + budget;
         let count =
             u32::try_from(self.app.config.admission_capacity).map_err(|_| Code::InvalidRequest)?;
-
-        let drain = timeout_at(
+        let all = match timeout_at(
             deadline,
             self.app.admission.clone().acquire_many_owned(count),
         )
-        .await;
-        let all = match drain {
+        .await
+        {
             Ok(Ok(permit)) => permit,
             _ => {
                 self.app.backend.shared.retire();
                 return Err(Code::DeadlineExceeded);
             }
         };
-
-        {
-            let mut core = lock(&self.app.backend.shared.core);
-            core.expected_exit = true;
-        }
+        lock(&self.app.backend.shared.core).expected_exit = true;
         let sent = timeout_at(deadline, self.app.backend.tx.send(Message::Stop)).await;
         if !matches!(sent, Ok(Ok(()))) && !self.app.backend.tx.is_closed() {
             self.app.backend.shared.retire();
             return Err(Code::DeadlineExceeded);
         }
         drop(all);
-
         if let Some(worker) = self.worker.take() {
             let joined = tokio::task::spawn_blocking(move || worker.join());
-            match timeout_at(deadline, joined).await {
-                Ok(Ok(Ok(()))) => {}
-                _ => {
-                    self.app.backend.shared.retire();
-                    return Err(Code::DeadlineExceeded);
-                }
+            if !matches!(timeout_at(deadline, joined).await, Ok(Ok(Ok(())))) {
+                self.app.backend.shared.retire();
+                return Err(Code::DeadlineExceeded);
             }
         }
         Ok(())
@@ -1137,13 +1329,42 @@ struct WorkerExit(Arc<Shared>);
 
 impl Drop for WorkerExit {
     fn drop(&mut self) {
-        let mut core = lock(&self.0.core);
-        core.worker_alive = false;
-        if core.expected_exit && core.state == Lifecycle::Draining {
-            core.state = Lifecycle::Stopped;
-        } else if !core.state.terminal() {
-            core.state = Lifecycle::Poisoned;
+        {
+            let mut core = lock(&self.0.core);
+            core.worker_alive = false;
+            if core.expected_exit && core.state == Lifecycle::Draining {
+                core.state = Lifecycle::Stopped;
+            } else if !core.state.terminal() {
+                core.state = Lifecycle::Poisoned;
+            }
+            core.admission = AdmissionMode::Quiesced;
         }
+        self.0.signal_terminal();
+    }
+}
+
+fn finish_error(shared: &Shared, job: Job, code: Code) {
+    {
+        let _core = lock(&shared.core);
+        let mut state = lock(&job.state);
+        state.phase = Phase::Done;
+        state.error = Some(code);
+    }
+    let _ = job.reply.send(Err(code));
+}
+
+fn queued_error(shared: &Shared, job: &Job) -> Option<Code> {
+    let core = lock(&shared.core);
+    let state = lock(&job.state);
+    if core.state.terminal() {
+        Some(Code::ExecutorPoisoned)
+    } else if state.phase == Phase::Expired
+        || Instant::now() >= job.deadline
+        || job.reply.is_closed()
+    {
+        Some(state.error.unwrap_or(Code::DeadlineExceeded))
+    } else {
+        None
     }
 }
 
@@ -1151,16 +1372,24 @@ fn worker_loop<B: Backend>(
     backend: &mut B,
     mut receiver: mpsc::Receiver<Message>,
     shared: &Shared,
+    runtime: &Runtime,
 ) {
-    while let Some(message) = receiver.blocking_recv() {
+    // Only one look-ahead message is retained; no secondary unbounded queue.
+    let mut pending = None;
+    loop {
+        let message = match pending.take() {
+            Some(message) => message,
+            None => match runtime.block_on(receiver.recv()) {
+                Some(message) => message,
+                None => return,
+            },
+        };
         match message {
             Message::Stop => {
                 receiver.close();
                 while let Ok(message) = receiver.try_recv() {
                     match message {
-                        Message::Infer(job) => {
-                            let _ = job.reply.send(Err(Code::NotReady));
-                        }
+                        Message::Infer(job) => finish_error(shared, job, Code::NotReady),
                         Message::Control { reply, .. } => {
                             let _ = reply.send(Err(Code::NotReady));
                         }
@@ -1174,6 +1403,9 @@ fn worker_loop<B: Backend>(
                 deadline,
                 reply,
             } => {
+                if reply.is_closed() {
+                    continue;
+                }
                 let result = if Instant::now() >= deadline {
                     Err(Code::DeadlineExceeded)
                 } else {
@@ -1181,82 +1413,222 @@ fn worker_loop<B: Backend>(
                 };
                 let _ = reply.send(result);
             }
-            Message::Infer(job) => run_job(backend, shared, job),
+            Message::Infer(first) => {
+                if let Some(code) = queued_error(shared, &first) {
+                    finish_error(shared, first, code);
+                    continue;
+                }
+                let mut jobs = vec![first];
+                if let Some(policy) = &shared.config.batching {
+                    let mut b = jobs[0].batches.len();
+                    let mut s = jobs[0].batches.iter().map(Vec::len).max().unwrap_or(0);
+                    let mut boundary = (jobs[0].inserted
+                        + Duration::from_micros(policy.max_wait_us))
+                    .min(jobs[0].deadline);
+
+                    while b < policy.max_batch_size && Instant::now() < boundary {
+                        let next = runtime.block_on(async {
+                            timeout_at(TokioInstant::from_std(boundary), receiver.recv()).await
+                        });
+                        let message = match next {
+                            Ok(Some(message)) => message,
+                            Ok(None) | Err(_) => break,
+                        };
+                        // A receive becoming ready at the boundary must not
+                        // extend assembly, even if the channel remains full.
+                        if Instant::now() >= boundary {
+                            pending = Some(message);
+                            break;
+                        }
+                        match message {
+                            Message::Infer(job) => {
+                                if let Some(code) = queued_error(shared, &job) {
+                                    finish_error(shared, job, code);
+                                    continue;
+                                }
+                                let next_b = b + job.batches.len();
+                                let next_s =
+                                    s.max(job.batches.iter().map(Vec::len).max().unwrap_or(0));
+                                if !policy.fits(next_b, next_s) {
+                                    pending = Some(Message::Infer(job));
+                                    break;
+                                }
+                                boundary = boundary.min(job.deadline);
+                                b = next_b;
+                                s = next_s;
+                                jobs.push(job);
+                            }
+                            control => {
+                                pending = Some(control);
+                                break;
+                            }
+                        }
+                    }
+                }
+                run_batch(backend, shared, jobs);
+            }
         }
     }
 }
 
-fn run_job<B: Backend>(backend: &mut B, shared: &Shared, job: Job) {
-    let armed = {
+fn run_batch<B: Backend>(backend: &mut B, shared: &Shared, jobs: Vec<Job>) {
+    // Remove expired assembled requests before constructing physical rows.
+    let mut live = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        if let Some(code) = queued_error(shared, &job) {
+            finish_error(shared, job, code);
+        } else {
+            live.push(job);
+        }
+    }
+    if live.is_empty() {
+        return;
+    }
+
+    let mut sequences = Vec::new();
+    let mut associations = Vec::new();
+    for job in &live {
+        for (request_row, sequence) in job.batches.iter().enumerate() {
+            sequences.push(sequence.clone());
+            associations.push(ExecutionRow {
+                request_id: job.request_id,
+                request_row,
+                case_id: job.case_id.clone(),
+            });
+        }
+    }
+
+    let armed;
+    {
+        // Atomic launch decision relative to HTTP deadline transitions.
         let mut core = lock(&shared.core);
-        let mut phase = lock(&job.phase);
-        if matches!(
-            core.state,
-            Lifecycle::Retired | Lifecycle::Poisoned | Lifecycle::Stopped
-        ) {
-            *phase = Phase::Done;
-            let _ = job.reply.send(Err(Code::ExecutorPoisoned));
-            return;
-        }
-        if *phase == Phase::Expired || Instant::now() >= job.deadline || job.reply.is_closed() {
-            *phase = Phase::Expired;
-            let _ = job.reply.send(Err(Code::DeadlineExceeded));
-            return;
-        }
-        *phase = Phase::Running;
-        core.forward_calls = match core.forward_calls.checked_add(1) {
-            Some(value) => value,
-            None => {
-                core.state = Lifecycle::Poisoned;
-                *phase = Phase::Done;
-                let _ = job.reply.send(Err(Code::InferenceFailed));
-                return;
+        if core.state.terminal() {
+            drop(core);
+            for job in live {
+                finish_error(shared, job, Code::ExecutorPoisoned);
             }
+            return;
+        }
+        let now = Instant::now();
+        if live.iter().any(|job| {
+            let state = lock(&job.state);
+            state.phase != Phase::Queued || now >= job.deadline || job.reply.is_closed()
+        }) {
+            // No GPU work has started. Revalidate/rebuild without any new wait.
+            drop(core);
+            run_batch(backend, shared, live);
+            return;
+        }
+        let Some(calls) = core.forward_calls.checked_add(live.len() as u64) else {
+            drop(core);
+            for job in live {
+                finish_error(shared, job, Code::InferenceFailed);
+            }
+            shared.poison();
+            return;
         };
-        let armed = core.armed;
+        core.forward_calls = calls;
+        armed = core.armed;
         core.armed = false;
-        armed
-    };
-
-    let mut result = if armed {
-        backend
-            .inject_policy_drift()
-            .and_then(|()| backend.forward(&job.batches))
-    } else {
-        backend.forward(&job.batches)
-    };
-    if armed && backend.restore_policy().is_err() {
-        result = Err(Code::InferenceFailed);
-    }
-    if let Ok(rows) = &result {
-        if validate_output(rows, job.batches.len()).is_err() {
-            result = Err(Code::InferenceFailed);
+        if armed && live.len() != 1 {
+            drop(core);
+            for job in live {
+                finish_error(shared, job, Code::InferenceFailed);
+            }
+            shared.poison();
+            return;
+        }
+        for job in &mut live {
+            lock(&job.state).phase = Phase::Running;
+            job.queue_slot.take();
         }
     }
-    if result.is_err() {
-        result = Err(Code::InferenceFailed);
+
+    // Catch operational panics without dropping constituent jobs/permits.
+    let execution = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = if armed {
+            backend.inject_policy_drift().and_then(|()| {
+                if shared.config.batching.is_some() {
+                    backend.forward_batch(&sequences, &associations)
+                } else {
+                    backend.forward(&sequences)
+                }
+            })
+        } else if shared.config.batching.is_some() {
+            backend.forward_batch(&sequences, &associations)
+        } else {
+            backend.forward(&sequences)
+        };
+        if armed {
+            // Restoration is cleanup only, never recovery or unpoisoning.
+            let _ = backend.restore_policy();
+            return Err(Code::InferenceFailed);
+        }
+        let rows = result?;
+        validate_output(&rows, sequences.len())?;
+        Ok(rows)
+    }));
+    let result = match execution {
+        Ok(result) => result,
+        Err(_) => Err(Code::InferenceFailed),
+    };
+    let operational_failure = result.is_err();
+    if operational_failure {
+        // Errors can precede host synchronization. Never release admission
+        // on the assumption that a failed CUDA call completed all GPU work.
+        let mut quarantine = lock(&shared.quarantined);
+        quarantine.extend(live.iter().map(|job| job.admission.clone()));
     }
 
+    let mut outputs = result.ok().unwrap_or_default().into_iter();
+    let terminal;
     {
         let mut core = lock(&shared.core);
-        let mut phase = lock(&job.phase);
-        if *phase == Phase::Expired || Instant::now() >= job.deadline {
-            if !core.state.terminal() {
-                core.state = Lifecycle::Retired;
-            }
-            *phase = Phase::Expired;
-            result = Err(Code::DeadlineExceeded);
-        } else if matches!(core.state, Lifecycle::Retired | Lifecycle::Poisoned) {
-            *phase = Phase::Done;
-            result = Err(Code::ExecutorPoisoned);
-        } else {
-            *phase = Phase::Done;
-            if result.is_err() {
-                core.state = Lifecycle::Poisoned;
-            }
+        let now = Instant::now();
+        let expired = live
+            .iter()
+            .any(|job| lock(&job.state).phase == Phase::Expired || now >= job.deadline);
+        if operational_failure && !core.state.terminal() {
+            core.state = Lifecycle::Poisoned;
+        } else if expired && !core.state.terminal() {
+            core.state = Lifecycle::Retired;
+        }
+        terminal = core.state.terminal();
+        if terminal {
+            core.admission = AdmissionMode::Quiesced;
+        }
+
+        // Publish every member's outcome before terminal notification.
+        // A failed physical execution never returns a successful partial batch.
+        for job in &live {
+            let mut state = lock(&job.state);
+            let code = if state.error == Some(Code::DeadlineExceeded) || now >= job.deadline {
+                Some(Code::DeadlineExceeded)
+            } else if operational_failure {
+                Some(Code::InferenceFailed)
+            } else if terminal {
+                Some(Code::ExecutorPoisoned)
+            } else {
+                None
+            };
+            state.phase = Phase::Done;
+            state.error = code;
         }
     }
-    let _ = job.reply.send(result);
+
+    for job in live {
+        let code = lock(&job.state).error;
+        let result = match code {
+            Some(code) => Err(code),
+            None => Ok(outputs.by_ref().take(job.batches.len()).collect()),
+        };
+        let _ = job.reply.send(result);
+        // On success, host retrieval has completed before this permit drops.
+        // On failure, quarantine retains another strong reference.
+    }
+    if terminal {
+        shared.signal_terminal();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -1296,9 +1668,13 @@ fn owner_control<B: Backend>(
     shared: &Shared,
     command: ControlCommand,
 ) -> Result<Observation, Code> {
-    if command == ControlCommand::Restore && backend.restore_policy().is_err() {
-        shared.poison();
-        return Err(Code::InferenceFailed);
+    if command == ControlCommand::Restore {
+        let restored =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| backend.restore_policy()));
+        if !matches!(restored, Ok(Ok(()))) {
+            shared.poison();
+            return Err(Code::InferenceFailed);
+        }
     }
     let mut core = lock(&shared.core);
     if command == ControlCommand::Attest
@@ -1311,23 +1687,29 @@ fn owner_control<B: Backend>(
     }
     match command {
         ControlCommand::Quiesce => {
+            if !core.quiescent {
+                return Err(Code::NotReady);
+            }
             core.admission = AdmissionMode::Quiesced;
             core.armed = false;
         }
         ControlCommand::InjectPolicyDrift => {
             if core.state != Lifecycle::Ready
+                || !core.worker_alive
                 || !matches!(core.admission, AdmissionMode::Quiesced)
+                || !core.quiescent
                 || core.armed
             {
                 return Err(Code::NotReady);
             }
             core.armed = true;
+            core.quiescent = false;
             core.admission = AdmissionMode::One;
         }
         ControlCommand::Restore | ControlCommand::Observe | ControlCommand::Attest => {}
     }
     Ok(Observation {
-        instance: shared.instance.clone(),
+        instance: shared.instance().to_owned(),
         pid: std::process::id(),
         lifecycle: core.state,
         worker_alive: core.worker_alive,
@@ -1354,13 +1736,7 @@ pub async fn bind_control(address: SocketAddr) -> Result<TcpListener, Code> {
 }
 
 fn secret_equal(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    left.iter()
-        .zip(right)
-        .fold(0u8, |difference, (left, right)| difference | (left ^ right))
-        == 0
+    left.len() == right.len() && left.iter().zip(right).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0
 }
 
 pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> Result<(), Code> {
@@ -1369,8 +1745,7 @@ pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> R
         .map_err(|_| Code::InvalidRequest)?
         .ip()
         .is_loopback()
-        || secret.len() < 32
-        || secret.len() > 256
+        || !(32..=256).contains(&secret.len())
     {
         return Err(Code::InvalidRequest);
     }
@@ -1381,7 +1756,7 @@ pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> R
         }
         let app = app.clone();
         let secret = secret.clone();
-        let control_timeout = app.config.control_timeout;
+        let duration = app.config.control_timeout;
         let exchange = async move {
             let mut bytes = Vec::with_capacity(256);
             loop {
@@ -1411,12 +1786,9 @@ pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> R
             } else if request.challenge.is_some() {
                 return Err(Code::InvalidRequest);
             }
-            let result = app.control(request.command).await;
-            let value = match result {
+            let value = match app.control(request.command).await {
                 Ok(observation) => json!({
-                    "ok": true,
-                    "challenge": request.challenge,
-                    "observation": observation
+                    "ok": true, "challenge": request.challenge, "observation": observation
                 }),
                 Err(code) => json!({"ok": false, "code": code}),
             };
@@ -1428,7 +1800,7 @@ pub async fn serve_control(listener: TcpListener, app: App, secret: String) -> R
                 .map_err(|_| Code::InvalidRequest)?;
             socket.shutdown().await.map_err(|_| Code::InvalidRequest)
         };
-        let _ = timeout(control_timeout, exchange).await;
+        let _ = timeout(duration, exchange).await;
     }
 }
 

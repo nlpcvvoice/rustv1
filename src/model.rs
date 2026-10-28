@@ -1,13 +1,19 @@
 use anyhow::{bail, ensure, Context, Result};
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
 };
+
+pub const BATCHED_EXECUTION_POLICY: &str = "batched_execution_v2";
+pub const BATCHED_HTTP_CONTRACT: &str = "m4-http-batched-F-v1";
+pub const MAX_PHYSICAL_BATCH: usize = 32;
+pub const MAX_PADDED_TOKENS: usize = 32_768;
+pub const MAX_ATTENTION_CELLS: usize = 33_554_432;
 
 #[derive(Clone, Deserialize)]
 pub struct EngineConfig {
@@ -19,6 +25,121 @@ pub struct EngineConfig {
     pub wait_us: u64,
 }
 
+/// Immutable limits for the explicit batched route.
+///
+/// Padded tokens count B*S. Attention cells count B*S*S, before heads.
+/// These are qualification ceilings, not estimates of available GPU memory.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BatchedExecution {
+    pub max_batch_size: usize,
+    pub max_padded_tokens: usize,
+    pub max_attention_cells: usize,
+    pub max_wait_us: u64,
+}
+
+impl Default for BatchedExecution {
+    fn default() -> Self {
+        Self {
+            max_batch_size: MAX_PHYSICAL_BATCH,
+            max_padded_tokens: MAX_PADDED_TOKENS,
+            max_attention_cells: MAX_ATTENTION_CELLS,
+            max_wait_us: 1_000,
+        }
+    }
+}
+
+impl BatchedExecution {
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            (2..=MAX_PHYSICAL_BATCH).contains(&self.max_batch_size),
+            "batched max_batch_size must be in 2..=32"
+        );
+        ensure!(
+            (1..=MAX_PADDED_TOKENS).contains(&self.max_padded_tokens),
+            "invalid padded-token budget"
+        );
+        ensure!(
+            (1..=MAX_ATTENTION_CELLS).contains(&self.max_attention_cells),
+            "invalid attention-cell budget"
+        );
+        ensure!(self.max_wait_us <= 2_000, "batch wait exceeds 2000 us");
+        Ok(())
+    }
+
+    pub fn validate_engine(&self, engine: &EngineConfig) -> Result<()> {
+        self.validate()?;
+        ensure!(
+            engine.max_len > 0 && engine.max_len <= 1024,
+            "invalid engine max_len"
+        );
+        ensure!(
+            self.max_batch_size <= engine.max_seqs,
+            "batch limit exceeds engine.max_seqs"
+        );
+        ensure!(
+            self.max_padded_tokens <= engine.max_tokens,
+            "padded-token limit exceeds engine.max_tokens"
+        );
+        ensure!(
+            self.max_padded_tokens >= engine.max_len,
+            "one maximum-length sequence must fit"
+        );
+        let one_attention = engine
+            .max_len
+            .checked_mul(engine.max_len)
+            .context("attention size overflow")?;
+        ensure!(
+            self.max_attention_cells >= one_attention,
+            "one maximum-length attention matrix must fit"
+        );
+        ensure!(
+            self.max_wait_us == engine.wait_us,
+            "batch wait differs from engine.wait_us"
+        );
+        Ok(())
+    }
+
+    pub fn fits(&self, b: usize, s: usize) -> bool {
+        if b == 0 || b > self.max_batch_size || s == 0 || s > 1024 {
+            return false;
+        }
+        let Some(tokens) = b.checked_mul(s) else {
+            return false;
+        };
+        let Some(cells) = tokens.checked_mul(s) else {
+            return false;
+        };
+        tokens <= self.max_padded_tokens && cells <= self.max_attention_cells
+    }
+}
+
+/// Server-assigned request identity plus the original input position.
+///
+/// request_id is unique within the server instance. case_id is only a
+/// correlation label; it is not an authorization or uniqueness mechanism.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionRow {
+    pub request_id: u64,
+    pub request_row: usize,
+    pub case_id: Option<String>,
+}
+
+impl ExecutionRow {
+    fn validate(&self) -> Result<()> {
+        if let Some(case) = &self.case_id {
+            ensure!(
+                !case.is_empty()
+                    && case.len() <= 128
+                    && case.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'),
+                "invalid execution case ID"
+            );
+        }
+        Ok(())
+    }
+}
+
 #[derive(Deserialize)]
 struct Config {
     hidden_size: usize,
@@ -26,27 +147,20 @@ struct Config {
     num_hidden_layers: usize,
     num_attention_heads: usize,
     num_key_value_heads: usize,
-
-    // Required: hidden_size / num_attention_heads is invalid here.
     head_dim: usize,
-
     vocab_size: usize,
     rms_norm_eps: f64,
     hidden_act: String,
     max_position_embeddings: usize,
-
-    // Frozen checkpoint contract: bidirectional attention, mean pooling.
     is_causal: bool,
     pooling: String,
     pad_token_id: u32,
-
     #[serde(default)]
     rope_theta: Option<f64>,
     #[serde(default)]
     rope_parameters: Option<Value>,
     #[serde(default)]
     rope_scaling: Option<Value>,
-
     #[serde(default)]
     attention_bias: bool,
     #[serde(default)]
@@ -62,10 +176,6 @@ struct Index {
     weight_map: BTreeMap<String, String>,
 }
 
-/// Semantic manifest for config.json (ASTRO6 #6): every key must either be
-/// consumed by `Config`, verified inert here, or be recognized metadata.
-/// Unknown keys fail closed: a parameter-free semantic change (for example
-/// a sliding-window setting) must not pass unnoticed.
 fn semantic_config_check(raw: &Value) -> Result<()> {
     let obj = raw.as_object().context("config.json must be an object")?;
     const CONSUMED: &[&str] = &[
@@ -116,14 +226,9 @@ fn semantic_config_check(raw: &Value) -> Result<()> {
             | "model_type"
             | "nemo_version"
             | "transformers_version" => {}
-            other => bail!(
-                "unknown config key '{other}': \
-                            semantic manifest is not closed"
-            ),
+            other => bail!("unknown config key '{other}': semantic manifest is not closed"),
         }
     }
-    // Nested semantic objects are classified too: a new nested option
-    // must not be silently ignored (ASTRO6 #7).
     for (field, known) in [
         (
             "rope_parameters",
@@ -152,8 +257,7 @@ fn semantic_config_check(raw: &Value) -> Result<()> {
                 for (key, value) in inner {
                     ensure!(
                         known.contains(&key.as_str()),
-                        "unknown {field}.{key}: nested semantic manifest \
-                         is not closed"
+                        "unknown {field}.{key}: nested semantic manifest is not closed"
                     );
                     if field == "rope_parameters" {
                         match key.as_str() {
@@ -161,11 +265,9 @@ fn semantic_config_check(raw: &Value) -> Result<()> {
                                 value.as_f64() == Some(0.1),
                                 "unexpected rope_parameters.llama_4_scaling_beta {value}"
                             ),
-                            // Neutral only while apply_yarn_scaling=false.
                             "mscale" | "mscale_all_dim" => ensure!(
                                 value.as_f64() == Some(1.0),
-                                "non-neutral {field}.{key}={value} while \
-                                 apply_yarn_scaling must be false"
+                                "non-neutral {field}.{key}={value} while apply_yarn_scaling=false"
                             ),
                             _ => {}
                         }
@@ -227,10 +329,6 @@ fn theta(c: &Config) -> Result<f64> {
     Ok(1_000_000.0)
 }
 
-/// Parsed YaRN parameters, verified against the vLLM v0.25.0 reference
-/// implementation (YaRNScalingRotaryEmbedding + yarn_find_correction_range
-/// with truncate=true). Only the exact configuration present in the frozen
-/// checkpoint contract is accepted.
 pub struct YarnParams {
     pub factor: f64,
     pub original_max: f64,
@@ -238,14 +336,10 @@ pub struct YarnParams {
     pub beta_slow: f64,
 }
 
-/// Frozen-contract rotary parameters. The frozen checkpoint must declare
-/// rope_parameters as an object with rope_type "yarn"; absence, malformed
-/// discriminators, or "default" are rejected for this loader.
 fn yarn_params(c: &Config) -> Result<YarnParams> {
     ensure!(
         c.rope_scaling.as_ref().is_none_or(Value::is_null),
-        "rope_scaling must be absent for the frozen contract; \
-         reconcile it with rope_parameters explicitly"
+        "rope_scaling must be absent for the frozen contract"
     );
     let params = c
         .rope_parameters
@@ -275,8 +369,7 @@ fn yarn_params(c: &Config) -> Result<YarnParams> {
 
     ensure!(
         params.get("apply_yarn_scaling").and_then(Value::as_bool) == Some(false),
-        "apply_yarn_scaling=true requires the mscale amplitude path; \
-         not present in the frozen contract"
+        "apply_yarn_scaling=true is unsupported by the frozen contract"
     );
     let attn_factor = match params.get("attn_factor") {
         None => 1.0,
@@ -316,15 +409,11 @@ fn yarn_params(c: &Config) -> Result<YarnParams> {
     };
     ensure!(
         y.factor == 16.0 && y.original_max == 16_384.0 && y.beta_fast == 32.0 && y.beta_slow == 1.0,
-        "YaRN parameters differ from the frozen contract \
-         (factor=16, original_max=16384, beta_fast=32, beta_slow=1)"
+        "YaRN parameters differ from the frozen contract"
     );
     Ok(y)
 }
 
-/// Frozen tensor manifest: exact names, shapes, and dtype for the BF16
-/// checkpoint. Validated against safetensors headers before any mapping,
-/// so an incorrect artifact cannot be obscured by dtype conversion.
 fn expected_manifest() -> BTreeMap<String, (Vec<usize>, &'static str)> {
     let mut m = BTreeMap::new();
     m.insert("embed_tokens.weight".into(), (vec![131072, 2048], "BF16"));
@@ -348,8 +437,6 @@ fn expected_manifest() -> BTreeMap<String, (Vec<usize>, &'static str)> {
     m
 }
 
-/// Parse safetensors headers (8-byte LE length + JSON) and validate the
-/// complete manifest: exact name set, shapes, and dtypes.
 fn validate_manifest(files: &[PathBuf]) -> Result<()> {
     let expected = expected_manifest();
     let mut seen: BTreeMap<String, (Vec<usize>, String)> = BTreeMap::new();
@@ -357,9 +444,10 @@ fn validate_manifest(files: &[PathBuf]) -> Result<()> {
     for file in files {
         let bytes = fs::read(file)?;
         ensure!(bytes.len() > 8, "truncated safetensors: {}", file.display());
-        let n = u64::from_le_bytes(bytes[..8].try_into()?) as usize;
-        ensure!(8 + n <= bytes.len(), "truncated header: {}", file.display());
-        let header: BTreeMap<String, Value> = serde_json::from_slice(&bytes[8..8 + n])?;
+        let n = usize::try_from(u64::from_le_bytes(bytes[..8].try_into()?))?;
+        let end = 8usize.checked_add(n).context("header size overflow")?;
+        ensure!(end <= bytes.len(), "truncated header: {}", file.display());
+        let header: BTreeMap<String, Value> = serde_json::from_slice(&bytes[8..end])?;
 
         for (name, entry) in header {
             if name == "__metadata__" {
@@ -370,7 +458,7 @@ fn validate_manifest(files: &[PathBuf]) -> Result<()> {
                 .and_then(Value::as_array)
                 .context("tensor missing shape")?
                 .iter()
-                .map(|v| v.as_u64().map(|v| v as usize))
+                .map(|v| v.as_u64().and_then(|v| usize::try_from(v).ok()))
                 .collect::<Option<Vec<_>>>()
                 .context("malformed shape")?;
             let dtype = entry
@@ -407,7 +495,6 @@ fn validate_manifest(files: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-// Flatten explicitly, so each projection is a conventional 2-D GEMM.
 fn linear3(l: &Linear, x: &Tensor) -> candle_core::Result<Tensor> {
     let (b, s, h) = x.dims3()?;
     let y = l.forward(&x.reshape((b * s, h))?)?;
@@ -436,10 +523,6 @@ struct Layer {
     down: Linear,
 }
 
-/// RoPE cos/sin tables for the frozen contract pipeline:
-/// FP32-rounded YaRN inv_freq -> FP64 angle -> FP32 sin/cos.
-/// Shared by Model::load and the table-dump binary so parity checks
-/// compare exactly what the model executes.
 pub fn build_rope_tables(
     theta: f64,
     yarn: Option<&YarnParams>,
@@ -512,8 +595,7 @@ impl Model {
 
         ensure!(
             (cfg.hidden_size, cfg.num_attention_heads, cfg.head_dim) == (2048, 24, 128),
-            "unexpected head geometry: this checkpoint has head_dim=128 \
-             while hidden_size / num_attention_heads = 85.33"
+            "unexpected head geometry"
         );
         ensure!(
             (cfg.num_hidden_layers, cfg.intermediate_size, cfg.vocab_size) == (16, 6144, 131072),
@@ -549,8 +631,7 @@ impl Model {
                     .get("original_max_position_embeddings")
                     .and_then(Value::as_f64)
                     == Some(16384.0),
-            "llama_4_scaling differs from the frozen contract \
-             (beta=0.1, original_max=16384)"
+            "llama_4_scaling differs from the frozen contract"
         );
         let llama4 = Some((
             l4.get("beta").and_then(Value::as_f64).unwrap(),
@@ -566,18 +647,14 @@ impl Model {
             engine.max_len > 0 && engine.max_len <= cfg.max_position_embeddings,
             "invalid serving length"
         );
-        ensure!(engine.max_len <= 1024, "M1 validates at most 1024 tokens");
+        ensure!(engine.max_len <= 1024, "validates at most 1024 tokens");
 
         let rope_theta = theta(&cfg)?;
         let files = weight_files(dir)?;
         validate_manifest(&files)?;
 
-        // SAFETY: model files must remain immutable while the mmap is live.
-        // Deploy the model directory read-only.
+        // SAFETY: checkpoint files must remain immutable while mappings live.
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&files, dtype, &device)? };
-        // Frozen checkpoint inventory: tensor names are top-level
-        // (embed_tokens.*, layers.N.*, norm.*); there is no "model." prefix.
-
         let embed = candle_nn::embedding(cfg.vocab_size, cfg.hidden_size, vb.pp("embed_tokens"))?;
 
         let q = cfg.num_attention_heads * cfg.head_dim;
@@ -608,11 +685,8 @@ impl Model {
         }
 
         let final_norm = vb.get(h, "norm.weight")?;
-
         let (cos_v, sin_v) =
             build_rope_tables(rope_theta, Some(&yarn), cfg.head_dim, engine.max_len);
-
-        // FP32 RoPE arithmetic, cast back to BF16 afterward.
         let half = cfg.head_dim / 2;
         let cos = Tensor::from_vec(cos_v, (engine.max_len, half), &device)?;
         let sin = Tensor::from_vec(sin_v, (engine.max_len, half), &device)?;
@@ -717,8 +791,6 @@ impl Model {
                     "wrong rotary geometry"
                 );
                 ensure!(s > 0 && s <= self.engine.max_len, "wrong rotary length");
-                // Actual Rust cache and arithmetic, positions 0..S.
-                // This isolates application+cache differences, not application alone.
                 self.rope(x, s)?
             }
             "attention" => {
@@ -738,11 +810,7 @@ impl Model {
                 let k = self.repeat_kv(k)?;
                 let v = self.repeat_kv(v)?;
                 let mask = Tensor::zeros((1, 1, s, s), DType::F32, &self.device)?;
-
                 let actual = crate::precision::attention(q, &k, &v, &mask, PrecisionProfile::F)?;
-
-                // F with F32 operands preserves F32 context rather than casting it
-                // to BF16. This is a dense diagnostic reconstruction, not FlashAttention.
                 let oracle = crate::precision::attention(
                     &q.to_dtype(DType::F32)?,
                     &k.to_dtype(DType::F32)?,
@@ -750,11 +818,9 @@ impl Model {
                     &mask,
                     PrecisionProfile::F,
                 )?;
-
                 let flatten = |x: Tensor| -> candle_core::Result<Tensor> {
                     x.transpose(1, 2)?.contiguous()?.reshape((1, s, heads * d))
                 };
-
                 return Ok(vec![
                     ("profile_F".to_owned(), flatten(actual)?),
                     ("dense_fp32_oracle".to_owned(), flatten(oracle)?),
@@ -790,17 +856,12 @@ impl Model {
             .reshape((b, nkv * groups, s, d))
     }
 
-    /// Decoder core shared by forward and forward_states: returns the
-    /// token states after the final RMSNorm in FP32, shape (b, s, h).
     fn run_decoder(&self, sequences: &[Vec<u32>]) -> Result<Tensor> {
         ensure!(!sequences.is_empty(), "empty batch");
         let s = sequences.iter().map(Vec::len).max().unwrap();
         self.run_decoder_padded(sequences, s, None)
     }
 
-    /// Stage-level observation for the Q2 stage-comparison protocol:
-    /// emits (layer_index, stage_name, tensor) at vLLM-pairable
-    /// boundaries. layer_index -1 marks global stages.
     pub fn run_decoder_dump(
         &self,
         sequences: &[Vec<u32>],
@@ -810,9 +871,11 @@ impl Model {
         self.run_decoder_padded(sequences, padded_s, Some(sink))
     }
 
-    /// Diagnostic entry point (ASTRO6 #9): padded_s overrides the
-    /// allocation/mask/reshape width. Valid lengths still drive masking
-    /// and pooling; no tokens are appended to valid sequences.
+    /// Right padding; all queries mask invalid keys in every layer.
+    /// Padded query outputs are discarded, not all-masked.
+    ///
+    /// The arithmetic below is retained for the B=1 exact-bit route.
+    /// Serving capacity checks are performed by IndependentExecutor.
     fn run_decoder_padded(
         &self,
         sequences: &[Vec<u32>],
@@ -825,8 +888,10 @@ impl Model {
         ensure!(s > 0 && s <= self.engine.max_len, "invalid sequence width");
         ensure!(sequences.iter().all(|x| !x.is_empty()), "empty sequence");
         ensure!(sequences.iter().all(|x| x.len() <= s), "padded_s too small");
+        let padded_tokens = b.checked_mul(s).context("padded size overflow")?;
+        let attention_cells = padded_tokens.checked_mul(s).context("mask size overflow")?;
 
-        let mut ids = vec![self.cfg.pad_token_id; b * s];
+        let mut ids = vec![self.cfg.pad_token_id; padded_tokens];
         for (row, seq) in sequences.iter().enumerate() {
             ensure!(
                 seq.iter().all(|&id| (id as usize) < self.cfg.vocab_size),
@@ -843,7 +908,7 @@ impl Model {
         let mut x = self.embed.forward(&ids)?;
         emit_stage(&mut dump, -1, "embed_tokens", &x)?;
 
-        let mut mask = vec![0f32; b * s * s];
+        let mut mask = vec![0f32; attention_cells];
         for (row, seq) in sequences.iter().enumerate() {
             for query in 0..s {
                 for key in seq.len()..s {
@@ -859,7 +924,6 @@ impl Model {
         let q_width = nq * d;
         let kv_width = nkv * d;
 
-        // These are the actual operands of the previous layer's residual add.
         let mut previous_branch: Option<Tensor> = None;
         let mut previous_residual: Option<Tensor> = None;
 
@@ -884,7 +948,6 @@ impl Model {
             let qkv = linear3(&layer.qkv, &n)?;
             emit_stage(&mut dump, li, "qkv.pre_rope", &qkv)?;
 
-            // All three views derive from the same immutable pre-rotation tensor.
             let q = qkv
                 .narrow(2, 0, q_width)?
                 .reshape((b, s, nq, d))?
@@ -945,7 +1008,6 @@ impl Model {
                 .contiguous()?
                 .reshape((b, s, q_width))?;
 
-            // One canonical alias only. No attention.output duplicate.
             emit_stage(&mut dump, li, "attention.pre_o_proj", &attention)?;
             let o = linear3(&layer.out, &attention)?;
             emit_stage(&mut dump, li, "o_proj", &o)?;
@@ -1009,8 +1071,6 @@ impl Model {
         Ok(pooled.broadcast_div(&norm)?.to_vec2::<f32>()?)
     }
 
-    /// Diagnostic: mean over valid token states after the final RMSNorm,
-    /// before L2 normalization. Shape (b, hidden), FP32.
     pub fn pooled_mean(&self, sequences: &[Vec<u32>]) -> Result<Tensor> {
         let x = self.run_decoder(sequences)?;
         let mut rows = Vec::with_capacity(sequences.len());
@@ -1022,8 +1082,6 @@ impl Model {
         Ok(Tensor::cat(&rows, 0)?)
     }
 
-    /// Diagnostic entry (ASTRO6 #9): explicit padded width; masking and
-    /// pooling still use the original valid lengths.
     pub fn forward_with_padded_s(
         &self,
         sequences: &[Vec<u32>],
@@ -1045,8 +1103,6 @@ impl Model {
         Ok(pooled.broadcast_div(&norm)?.to_vec2::<f32>()?)
     }
 
-    /// Observed-shape wrapper for batch forensics: reports the padded
-    /// geometry actually executed and the projection row count.
     pub fn forward_observed(
         &self,
         sequences: &[Vec<u32>],
@@ -1061,9 +1117,6 @@ impl Model {
         })
     }
 
-    /// Per-token states after the final RMSNorm (valid tokens only),
-    /// shape (b, seq_len, hidden). Used for stage-level tests such as
-    /// bidirectionality.
     pub fn forward_states(&self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<Vec<f32>>>> {
         let x = self.run_decoder(sequences)?;
         let mut out = Vec::with_capacity(sequences.len());
@@ -1081,36 +1134,70 @@ pub struct IndependentExecutor {
     manifest: std::fs::File,
     next_forward: u64,
     poisoned: bool,
+    batching: Option<BatchedExecution>,
     _thread_affinity: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 
 #[cfg(feature = "cuda")]
 impl IndependentExecutor {
-    /// Construct on the executor's owning thread.
-    ///
-    /// Operational requirements:
-    /// - `math` was acquired before any model execution or warmup.
-    /// - No other code changes Candle's process-global GEMM settings.
-    /// - The device and its stream are not concurrently used by another owner.
-    ///
-    /// No raw-handle binding or unsafe call is required.
     pub fn load(
-        dir: &std::path::Path,
+        dir: &Path,
         device: Device,
         engine: EngineConfig,
         math: crate::cuda_math::MathModePin,
-        manifest_path: &std::path::Path,
+        manifest_path: &Path,
     ) -> Result<Self> {
         Self::load_with_attestation(dir, device, engine, math, manifest_path, None)
     }
 
     pub fn load_with_attestation(
-        dir: &std::path::Path,
+        dir: &Path,
         device: Device,
         engine: EngineConfig,
         math: crate::cuda_math::MathModePin,
-        manifest_path: &std::path::Path,
+        manifest_path: &Path,
         attestation_sha256: Option<&str>,
+    ) -> Result<Self> {
+        Self::load_configured(
+            dir,
+            device,
+            engine,
+            math,
+            manifest_path,
+            attestation_sha256,
+            None,
+        )
+    }
+
+    pub fn load_batched_with_attestation(
+        dir: &Path,
+        device: Device,
+        engine: EngineConfig,
+        math: crate::cuda_math::MathModePin,
+        manifest_path: &Path,
+        attestation_sha256: Option<&str>,
+        batching: BatchedExecution,
+    ) -> Result<Self> {
+        batching.validate_engine(&engine)?;
+        Self::load_configured(
+            dir,
+            device,
+            engine,
+            math,
+            manifest_path,
+            attestation_sha256,
+            Some(batching),
+        )
+    }
+
+    fn load_configured(
+        dir: &Path,
+        device: Device,
+        engine: EngineConfig,
+        math: crate::cuda_math::MathModePin,
+        manifest_path: &Path,
+        attestation_sha256: Option<&str>,
+        batching: Option<BatchedExecution>,
     ) -> Result<Self> {
         use std::io::Write;
 
@@ -1118,6 +1205,9 @@ impl IndependentExecutor {
         ensure!(engine.max_seqs > 0, "invalid max_seqs");
         ensure!(engine.max_len > 0, "invalid max_len");
         ensure!(engine.max_tokens >= engine.max_len, "one sequence must fit");
+        if let Some(policy) = &batching {
+            policy.validate_engine(&engine)?;
+        }
         math.check()?;
 
         let model = Model::load(dir, device, engine, DType::BF16)?
@@ -1142,6 +1232,27 @@ impl IndependentExecutor {
             "math": math.check()?
         });
 
+        if let Some(policy) = &batching {
+            start_record["execution_policy"] = serde_json::json!(BATCHED_EXECUTION_POLICY);
+            start_record["physical_B"] = serde_json::json!({
+                "minimum": 1,
+                "maximum": policy.max_batch_size,
+                "dummy_rows": false
+            });
+            start_record["physical_S"] = serde_json::json!("maximum_valid_length");
+            start_record["batching"] = serde_json::to_value(policy)?;
+            start_record["masking"] = serde_json::json!({
+                "padding": "right",
+                "pad_id": 11,
+                "attention": "bidirectional",
+                "invalid_key_score": "negative_infinity",
+                "padded_queries": "attend_valid_keys_then_discard",
+                "positions": "zero_based_per_sequence",
+                "pooling": "valid_tokens_only"
+            });
+            start_record["independent_compatibility_route"] = serde_json::json!("forward_serving");
+        }
+
         if let Some(att_sha) = attestation_sha256 {
             start_record["attestation_sha256"] = serde_json::json!(att_sha);
         }
@@ -1157,12 +1268,17 @@ impl IndependentExecutor {
             manifest,
             next_forward: 0,
             poisoned: false,
+            batching,
             _thread_affinity: std::marker::PhantomData,
         })
     }
 
     pub fn is_poisoned(&self) -> bool {
         self.poisoned
+    }
+
+    pub fn batching(&self) -> Option<&BatchedExecution> {
+        self.batching.as_ref()
     }
 
     fn record(&mut self, value: &serde_json::Value) -> Result<()> {
@@ -1175,12 +1291,8 @@ impl IndependentExecutor {
         Ok(())
     }
 
-    pub fn forward_serving(&mut self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
-        ensure!(!self.poisoned, "executor is poisoned; restart the process");
+    fn validate_sequences(&self, sequences: &[Vec<u32>]) -> Result<()> {
         ensure!(!sequences.is_empty(), "empty request");
-
-        // Reject the entire invalid logical request before launching anything.
-        // Logical input count is not a physical GPU batch count.
         for sequence in sequences {
             ensure!(
                 !sequence.is_empty() && sequence.len() <= self.model.engine.max_len,
@@ -1193,16 +1305,206 @@ impl IndependentExecutor {
                 "padding or out-of-vocabulary token"
             );
         }
+        Ok(())
+    }
 
-        // All operational failures, including math checks, counters and
-        // manifest writes, leave this true. An unwinding panic also leaves it
-        // true if a caller catches that panic and retains the object.
+    /// Compatibility route: always one physical B=1 forward per sequence.
+    ///
+    /// This remains the route for existing startup checks, M2 acceptance
+    /// and singleton golden export. Opening with a batching policy does
+    /// not change this method's execution semantics.
+    pub fn forward_serving(&mut self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
+        ensure!(!self.poisoned, "executor is poisoned; restart the process");
+        self.validate_sequences(sequences)?;
+
         self.poisoned = true;
         let result = self.forward_validated(sequences);
         if result.is_ok() {
             self.poisoned = false;
         }
         result
+    }
+
+    /// Execute exactly one physical batch, without splitting or retry.
+    ///
+    /// The scheduler assembles complete, already-validated requests. This
+    /// boundary validates again before any execution. B=1 uses the same
+    /// Model::forward arithmetic as the compatibility route, with S=L.
+    pub fn forward_batch(
+        &mut self,
+        sequences: &[Vec<u32>],
+        associations: &[ExecutionRow],
+    ) -> Result<Vec<Vec<f32>>> {
+        ensure!(!self.poisoned, "executor is poisoned; restart the process");
+        self.validate_sequences(sequences)?;
+        let policy = self
+            .batching
+            .as_ref()
+            .context("executor was not opened for batched execution")?;
+        ensure!(
+            associations.len() == sequences.len(),
+            "association cardinality mismatch"
+        );
+
+        let mut positions = BTreeSet::new();
+        let mut cases: BTreeMap<u64, &Option<String>> = BTreeMap::new();
+        for association in associations {
+            association.validate()?;
+            ensure!(
+                positions.insert((association.request_id, association.request_row)),
+                "duplicate request/input association"
+            );
+            if let Some(previous) = cases.insert(association.request_id, &association.case_id) {
+                ensure!(
+                    previous == &association.case_id,
+                    "inconsistent case ID for one request"
+                );
+            }
+        }
+
+        let s = sequences
+            .iter()
+            .map(Vec::len)
+            .max()
+            .context("empty batch")?;
+        ensure!(
+            policy.fits(sequences.len(), s),
+            "physical batch exceeds configured capacity"
+        );
+
+        self.poisoned = true;
+        let result = self.forward_batch_validated(sequences, associations, s);
+        if result.is_ok() {
+            self.poisoned = false;
+        }
+        result
+    }
+
+    fn forward_batch_validated(
+        &mut self,
+        sequences: &[Vec<u32>],
+        associations: &[ExecutionRow],
+        s: usize,
+    ) -> Result<Vec<Vec<f32>>> {
+        use sha2::{Digest, Sha256};
+
+        let b = sequences.len();
+        let projection_rows = b.checked_mul(s).context("projection size overflow")?;
+        let attention_cells = projection_rows
+            .checked_mul(s)
+            .context("attention size overflow")?;
+        let valid_tokens = sequences.iter().try_fold(0usize, |total, sequence| {
+            total
+                .checked_add(sequence.len())
+                .context("valid token count overflow")
+        })?;
+        let math = self.math.check()?;
+        let forward_id = self.next_forward;
+        self.next_forward = self
+            .next_forward
+            .checked_add(1)
+            .context("forward counter overflow")?;
+
+        let members: Vec<Value> = sequences
+            .iter()
+            .zip(associations)
+            .enumerate()
+            .map(|(physical_row, (sequence, association))| {
+                serde_json::json!({
+                    "physical_row": physical_row,
+                    "request_id": association.request_id,
+                    "request_row": association.request_row,
+                    "case_id": association.case_id,
+                    "valid_length": sequence.len(),
+                    "token_sha256": crate::precision::token_digest(sequence)
+                })
+            })
+            .collect();
+
+        self.record(&serde_json::json!({
+            "kind": "physical_forward_begin",
+            "execution_policy": BATCHED_EXECUTION_POLICY,
+            "forward_id": forward_id,
+            "B": b,
+            "S": s,
+            "projection_rows": projection_rows,
+            "attention_cells_before_heads": attention_cells,
+            "valid_tokens": valid_tokens,
+            "padding_tokens": projection_rows - valid_tokens,
+            "profile": "F",
+            "rows": members,
+            "math": math
+        }))?;
+
+        let result = (|| -> Result<Vec<Vec<f32>>> {
+            // One call with physical B rows. No singleton loop here.
+            // For B=1 this is the existing unpadded numerical path.
+            let output = self.model.forward(sequences)?;
+            ensure!(output.len() == b, "physical batch output cardinality");
+            for row in &output {
+                ensure!(row.len() == 2048, "embedding width");
+                ensure!(row.iter().all(|x| x.is_finite()), "nonfinite embedding");
+                let norm = row
+                    .iter()
+                    .map(|&x| f64::from(x).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                ensure!(
+                    norm.is_finite() && (norm - 1.0).abs() <= 1e-5,
+                    "embedding norm {norm}"
+                );
+            }
+            // Host retrieval in Model::forward completes the output path.
+            self.math.check()?;
+            Ok(output)
+        })();
+
+        let output = match result {
+            Ok(output) => output,
+            Err(error) => {
+                let _ = self.record(&serde_json::json!({
+                    "kind": "physical_forward_end",
+                    "execution_policy": BATCHED_EXECUTION_POLICY,
+                    "forward_id": forward_id,
+                    "B": b,
+                    "S": s,
+                    "profile": "F",
+                    "rows": members,
+                    "status": "error",
+                    "error": format!("{error:#}")
+                }));
+                return Err(error);
+            }
+        };
+
+        let output_rows: Vec<Value> = output
+            .iter()
+            .zip(&members)
+            .map(|(row, member)| {
+                let bytes: Vec<u8> = row.iter().flat_map(|x| x.to_le_bytes()).collect();
+                let mut member = member.clone();
+                member["output_sha256"] =
+                    serde_json::json!(format!("{:x}", Sha256::digest(&bytes)));
+                member
+            })
+            .collect();
+        let math = self.math.check()?;
+        self.record(&serde_json::json!({
+            "kind": "physical_forward_end",
+            "execution_policy": BATCHED_EXECUTION_POLICY,
+            "forward_id": forward_id,
+            "B": b,
+            "S": s,
+            "projection_rows": projection_rows,
+            "attention_cells_before_heads": attention_cells,
+            "valid_tokens": valid_tokens,
+            "profile": "F",
+            "status": "ok",
+            "rows": output_rows,
+            "math": math
+        }))?;
+
+        Ok(output)
     }
 
     fn forward_validated(&mut self, sequences: &[Vec<u32>]) -> Result<Vec<Vec<f32>>> {
@@ -1252,7 +1554,6 @@ impl IndependentExecutor {
                     "embedding norm {norm}"
                 );
 
-                // Model::forward has retrieved the output to host.
                 self.math.check()?;
                 Ok(row)
             })();
@@ -1260,9 +1561,6 @@ impl IndependentExecutor {
             let row = match result {
                 Ok(row) => row,
                 Err(error) => {
-                    // Preserve the original execution error. If error logging
-                    // also fails, the begin record remains incomplete and the
-                    // executor remains poisoned.
                     let _ = self.record(&serde_json::json!({
                         "kind": "physical_forward_end",
                         "forward_id": forward_id,
@@ -1326,15 +1624,12 @@ mod guard_tests {
 
     #[test]
     fn unknown_config_key_rejected() {
-        // Genuinely unknown top-level key (not a recognized switch).
         let raw: Value =
             serde_json::from_str(&format!("{{{BASE},\"mystery_switch\":true}}")).unwrap();
         assert!(semantic_config_check(&raw).is_err());
-        // Recognized switch with an unsupported value.
         let raw: Value =
             serde_json::from_str(&format!("{{{BASE},\"sliding_window\":4096}}")).unwrap();
         assert!(semantic_config_check(&raw).is_err());
-        // Unknown nested key inside rope_parameters.
         let raw: Value =
             serde_json::from_str(&format!("{{{BASE},{YARN},\"mystery_nested\":1}}")).unwrap();
         assert!(semantic_config_check(&raw).is_err());
@@ -1347,7 +1642,6 @@ mod guard_tests {
         ))
         .unwrap();
         assert!(semantic_config_check(&raw).is_err());
-        // Fully valid frozen-contract configuration.
         let raw: Value = serde_json::from_str(&format!(
             "{{{BASE},{YARN},\"sliding_window\":null,\"model_type\":\"ministral3\"}}"
         ))
@@ -1362,7 +1656,6 @@ mod guard_tests {
 
     #[test]
     fn malformed_alias_rejected() {
-        // rope_type numeric, alias valid: must still fail.
         assert!(yarn_params(&cfg(
             r#""rope_parameters":{"rope_type":123,"type":"yarn","factor":16.0,
                "original_max_position_embeddings":16384,"beta_fast":32.0,
@@ -1405,5 +1698,96 @@ mod guard_tests {
     #[test]
     fn manifest_has_146_entries() {
         assert_eq!(expected_manifest().len(), 146);
+    }
+
+    fn batch_engine() -> EngineConfig {
+        EngineConfig {
+            causal: false,
+            rope_layout: "split_half".into(),
+            max_len: 1024,
+            max_tokens: 32768,
+            max_seqs: 32,
+            wait_us: 1000,
+        }
+    }
+
+    #[test]
+    fn batched_default_envelope() {
+        let policy = BatchedExecution::default();
+        assert!(policy.validate_engine(&batch_engine()).is_ok());
+        assert!(policy.fits(1, 1));
+        assert!(policy.fits(1, 1024));
+        assert!(policy.fits(32, 1024));
+        assert!(!policy.fits(33, 1));
+        assert!(!policy.fits(1, 1025));
+        assert!(!policy.fits(0, 1));
+        assert!(!policy.fits(1, 0));
+        assert!(!policy.fits(usize::MAX, usize::MAX));
+    }
+
+    #[test]
+    fn padded_budget_is_not_valid_token_budget() {
+        let policy = BatchedExecution {
+            max_batch_size: 32,
+            max_padded_tokens: 2048,
+            max_attention_cells: MAX_ATTENTION_CELLS,
+            max_wait_us: 1000,
+        };
+        assert!(policy.fits(2, 1024));
+        assert!(!policy.fits(3, 1024));
+        assert!(policy.fits(8, 256));
+    }
+
+    #[test]
+    fn attention_budget_is_independent() {
+        let policy = BatchedExecution {
+            max_batch_size: 32,
+            max_padded_tokens: MAX_PADDED_TOKENS,
+            max_attention_cells: 2 * 1024 * 1024,
+            max_wait_us: 1000,
+        };
+        assert!(policy.fits(2, 1024));
+        assert!(!policy.fits(3, 1024));
+        assert!(policy.fits(32, 256));
+    }
+
+    #[test]
+    fn engine_limits_are_not_silently_overridden() {
+        let policy = BatchedExecution::default();
+        let mut engine = batch_engine();
+        engine.max_seqs = 8;
+        assert!(policy.validate_engine(&engine).is_err());
+        engine = batch_engine();
+        engine.max_tokens = 8192;
+        assert!(policy.validate_engine(&engine).is_err());
+        engine = batch_engine();
+        engine.wait_us = 0;
+        assert!(policy.validate_engine(&engine).is_err());
+    }
+
+    #[test]
+    fn batching_policy_rejects_unknown_fields() {
+        let raw = r#"{
+            "max_batch_size":32,
+            "max_padded_tokens":32768,
+            "max_attention_cells":33554432,
+            "max_wait_us":1000,
+            "silent_fallback":true
+        }"#;
+        assert!(serde_json::from_str::<BatchedExecution>(raw).is_err());
+    }
+
+    #[test]
+    fn execution_case_id_validation() {
+        let mut row = ExecutionRow {
+            request_id: 1,
+            request_row: 0,
+            case_id: Some("batch-47-0".into()),
+        };
+        assert!(row.validate().is_ok());
+        row.case_id = Some("bad\nid".into());
+        assert!(row.validate().is_err());
+        row.case_id = None;
+        assert!(row.validate().is_ok());
     }
 }
