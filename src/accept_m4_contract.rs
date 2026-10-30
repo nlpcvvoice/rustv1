@@ -59,6 +59,7 @@ pub struct Shapes {
 }
 
 pub struct Bundle {
+    #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
     pub model_dir: PathBuf,
     pub input_sha256: String,
     pub artifacts: BTreeMap<String, Artifact>,
