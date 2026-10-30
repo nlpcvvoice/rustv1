@@ -355,9 +355,19 @@ compliance applied via the cifix loop; one integration fix at 5b9e1ad
 gated for CPU-only builds). All gates green: Modal m3verify
 (FMT/CPU_CHECK/CPU_TEST/CUDA_CHECK/CLIPPY) and GitHub CI (6 jobs).
 
-Not yet accepted: B>1 acceptance requires the `accept_m4` driver,
-batch-capable golden export, and batched-route goldens (requested in
-the #32b round), plus an audit v3 renewal — audit v2 explicitly
-covers physical B=1 only. Prescope: 8 model.rs regions to renew,
-2 m2_route.rs regions to re-anchor; precision.rs and cuda_math.rs
-bytes unchanged and remain covered.
+Driver-side components integrated since (all via the same
+external-architect rounds, verbatim + fmt/clippy fixes, every step
+gated by Modal m3verify and GitHub CI):
+
+| Component | Commit | Role |
+|---|---|---|
+| `golden_export_m4` | (v32b round) | batch-capable golden export: batched goldens + executor manifest + provenance, audit identity bound at runtime |
+| `accept_m4` thin bin + contract + prepass module | c1eb284 | in-process pre-pass: 15-role batch evidence consumed by finalize; materialization contract (fixtures_exec 22, mappings_v1 46) |
+| acceptance-http module | 05b668c, 2ca6996 | live serialized HTTP-to-executor reconciliation: per-case connection isolation, observation/manifest prefix invariants, zero-execution proof for rejections, four-way association for positives, handoff v1 contract |
+
+Not yet accepted: the remaining driver phases (finalized-policy
+loading, the 46 mappings in both modes, scheduler/lifecycle
+orchestration families) are still in request (round #32d onward), and
+an audit v3 renewal is mandatory before any M4 acceptance run —
+`serve_m3` rejects an audit artifact identical to the B1 base, and
+audit v2 explicitly covers physical B=1 only.
