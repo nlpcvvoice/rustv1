@@ -87,7 +87,7 @@ pub fn jsonl(bytes: &[u8]) -> Result<Vec<Value>> {
         .collect()
 }
 
-fn random_label() -> Result<String> {
+pub(crate) fn random_label() -> Result<String> {
     let mut bytes = [0u8; 32];
     SystemRandom::new()
         .fill(&mut bytes)
@@ -213,7 +213,7 @@ fn serving_pairs(
     Ok(evidence)
 }
 
-fn check_startup(
+pub(crate) fn check_startup(
     bytes: &[u8],
     loaded: &Loaded,
     attestation_sha256: &str,
@@ -662,7 +662,7 @@ fn ready_observation(v: &Value, instance: &str, pid: u32, ready: bool) -> Result
     uint(v, "forward_calls")
 }
 
-fn base_address(base: &str) -> Result<SocketAddr> {
+pub(crate) fn base_address(base: &str) -> Result<SocketAddr> {
     let uri: hyper::Uri = base.parse()?;
     ensure!(
         uri.scheme_str() == Some("http")

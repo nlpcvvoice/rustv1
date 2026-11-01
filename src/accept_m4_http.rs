@@ -66,7 +66,7 @@ struct Handoff {
 
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Limits {
+pub(crate) struct Limits {
     connect_ms: u64,
     headers_ms: u64,
     body_ms: u64,
@@ -280,7 +280,7 @@ impl Drop for AbortConnection {
 }
 
 #[derive(Clone)]
-struct Wire {
+pub(crate) struct Wire {
     body: Vec<u8>,
     media: String,
     content_encoding: Option<String>,
@@ -288,7 +288,7 @@ struct Wire {
 }
 
 impl Wire {
-    fn json(value: Value) -> Result<Self> {
+    pub(crate) fn json(value: Value) -> Result<Self> {
         Ok(Self {
             body: serde_json::to_vec(&value)?,
             media: "application/json".into(),
@@ -298,11 +298,11 @@ impl Wire {
     }
 }
 
-struct Reply {
-    status: u16,
-    request_id: Option<u64>,
-    headers: Value,
-    bytes: Vec<u8>,
+pub(crate) struct Reply {
+    pub(crate) status: u16,
+    pub(crate) request_id: Option<u64>,
+    pub(crate) headers: Value,
+    pub(crate) bytes: Vec<u8>,
 }
 
 fn one_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<Option<&'a str>> {
@@ -314,7 +314,7 @@ fn one_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<Option<&'a str>>
         .transpose()
 }
 
-struct Http {
+pub(crate) struct Http {
     authority: String,
     address: SocketAddr,
     instance: String,
@@ -322,7 +322,7 @@ struct Http {
 }
 
 impl Http {
-    fn new(base: &str, instance: &str, limits: Limits) -> Result<Self> {
+    pub(crate) fn new(base: &str, instance: &str, limits: Limits) -> Result<Self> {
         let uri: Uri = base.parse()?;
         ensure!(uri.scheme_str() == Some("http"), "HTTP scheme required");
         ensure!(
@@ -344,7 +344,7 @@ impl Http {
         })
     }
 
-    async fn send(&self, case: &str, wire: &Wire) -> Result<Reply> {
+    pub(crate) async fn send(&self, case: &str, wire: &Wire) -> Result<Reply> {
         ensure!(label_valid(case), "invalid case label");
         ensure!(wire.body.len() <= BODY_LIMIT + 65536, "request size bound");
 
@@ -563,7 +563,7 @@ fn check_error(reply: &Reply, status: u16, code: &str) -> Result<Value> {
     Ok(value)
 }
 
-fn decode_success(
+pub(crate) fn decode_success(
     reply: &Reply,
     bundle: &Bundle,
     indices: &[usize],

@@ -21,6 +21,9 @@ pub mod acceptance_policy;
 #[path = "../accept_m4_core.rs"]
 pub mod acceptance_core;
 
+#[path = "../accept_m4_scheduler.rs"]
+pub mod acceptance_scheduler;
+
 use anyhow::{bail, Result};
 use std::path::Path;
 
