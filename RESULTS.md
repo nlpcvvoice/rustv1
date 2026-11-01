@@ -364,10 +364,13 @@ gated by Modal m3verify and GitHub CI):
 | `golden_export_m4` | (v32b round) | batch-capable golden export: batched goldens + executor manifest + provenance, audit identity bound at runtime |
 | `accept_m4` thin bin + contract + prepass module | c1eb284 | in-process pre-pass: 15-role batch evidence consumed by finalize; materialization contract (fixtures_exec 22, mappings_v1 46) |
 | acceptance-http module | 05b668c, 2ca6996 | live serialized HTTP-to-executor reconciliation: per-case connection isolation, observation/manifest prefix invariants, zero-execution proof for rejections, four-way association for positives, handoff v1 contract |
+| policy module | 7b33c90 | finalized-policy loading: TOCTOU-hardened 0600 reads, 28-role artifact binding against actual bytes, running-executable self-binding, materialization contract, shared required-case ledger with strict ordering and full readback |
+| core coordinator prefix | 7b33c90 | launch binding through independent owner join: authenticated orchestration, startup reconciliation, handoff v1 + unchanged HTTP phase invocation, supervised drain with Linux process-exit proof, controlled independent `Service` with immediate recoveries |
+| scheduler prefix | eb7f862 | fresh supervised launch binding, bounded concurrent HTTP waves, live cross-request coalescing witness (family-53), honest not-yet-proven flags for capacity/restart/completion |
 
-Not yet accepted: the remaining driver phases (finalized-policy
-loading, the 46 mappings in both modes, scheduler/lifecycle
-orchestration families) are still in request (round #32d onward), and
-an audit v3 renewal is mandatory before any M4 acceptance run —
+Not yet accepted: the deterministic scheduler seam (production
+change required for capacity evidence per the architect's analysis),
+scheduler families 54-58, lifecycle phase, the final dispatcher, and
+an audit v3 renewal covering the batch regions and the seam —
 `serve_m3` rejects an audit artifact identical to the B1 base, and
 audit v2 explicitly covers physical B=1 only.
