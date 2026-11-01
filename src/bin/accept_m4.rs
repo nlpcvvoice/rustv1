@@ -15,6 +15,12 @@ mod prepass;
 #[path = "../accept_m4_http.rs"]
 mod acceptance_http;
 
+#[path = "../accept_m4_policy.rs"]
+pub mod acceptance_policy;
+
+#[path = "../accept_m4_core.rs"]
+pub mod acceptance_core;
+
 use anyhow::{bail, Result};
 use std::path::Path;
 
