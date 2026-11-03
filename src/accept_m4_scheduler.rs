@@ -3,11 +3,12 @@
 //! This is a complete family-53 runner, not the complete scheduler phase.
 //! It appends precisely the first required scheduler case.
 //!
-//! The external supervisor must launch the replacement only after the
-//! independent owner has joined. This module receives the existing
-//! authenticated orch_ready exchange; it invents no launch/control command.
-//! Receiving orch_ready after the join is NOT represented as an independent
-//! measurement of the replacement's process-creation time.
+//! The driver sends the authenticated `orch_request_launch` authorization
+//! only after validating the independent owner join and the old process's
+//! absence. The supervisor must not launch a replacement before receiving
+//! that authorization, then replies with the authenticated `orch_ready`
+//! exchange. Receiving orch_ready after the join is NOT represented as an
+//! independent measurement of the replacement's process-creation time.
 //!
 //! The existing HTTP client is reused. Concurrent HTTP submission is only
 //! stimulus: coalescing is established exclusively from reconciled executor
@@ -230,10 +231,58 @@ async fn bind_replacement(state: &mut CoreState, out: &Path) -> Result<Launch> {
 
     // Recheck absence, rather than interpreting a terminal observation as exit.
     let old_absence = state.initial_launch.process.prove_absent().await?;
-    let ready = state.orchestration.receive().await?;
+    let launch_request_id = core::random_label()?;
+    let launch_request = state
+        .orchestration
+        .send(
+            "orch_request_launch",
+            json!({
+                "launch_request_id": launch_request_id,
+                "reason": "after_independent_join",
+                "previous_instance": state.initial_launch.instance,
+                "previous_pid": state.initial_launch.pid,
+                "policy_sha256": state.loaded.policy_sha256,
+                "owner_closure_sha256": join_sha,
+                "old_absence_sha256": sha(&serde_json::to_vec(&old_absence)?)
+            }),
+        )
+        .await?;
+
+    let launch_accepted = state.orchestration.receive().await?;
     ensure!(
-        ready["kind"] == "orch_ready",
-        "expected replacement orch_ready"
+        launch_accepted["kind"] == "orch_launch_accepted",
+        "expected launch authorization acknowledgement"
+    );
+    closed(
+        &launch_accepted["fields"],
+        &["launch_request_id", "request_seq", "previous_instance"],
+    )?;
+    ensure!(
+        launch_accepted["fields"]["launch_request_id"] == launch_request_id
+            && launch_accepted["fields"]["request_seq"] == launch_request["seq"]
+            && launch_accepted["fields"]["previous_instance"] == state.initial_launch.instance,
+        "launch acknowledgement binding"
+    );
+
+    let ready = state
+        .orchestration
+        .receive_with_budget(std::time::Duration::from_secs(660))
+        .await?;
+    ensure!(ready["kind"] == "orch_ready", "replacement launch failed");
+    closed(
+        &ready["fields"],
+        &[
+            "launch_request_id",
+            "instance",
+            "pid",
+            "start_utc",
+            "manifest",
+            "attestation",
+        ],
+    )?;
+    ensure!(
+        ready["fields"]["launch_request_id"] == launch_request_id,
+        "replacement ready belongs to another launch request"
     );
 
     let fields = &ready["fields"];
@@ -384,6 +433,9 @@ async fn bind_replacement(state: &mut CoreState, out: &Path) -> Result<Launch> {
             "boot_id": process.boot_id,
             "running_binary_sha256": process.executable_sha256,
             "launch_performed_by": "external_supervisor",
+            "authenticated_launch_request": launch_request,
+            "authenticated_launch_accepted": launch_accepted,
+            "launch_authorization_after_independent_join": true,
             "process_creation_after_join_independently_measured": false
         }),
     )?;
@@ -936,6 +988,9 @@ async fn execute(core_state: CoreState) -> Result<SchedulerState> {
 ///
 /// On error the run is incomplete. The external supervisor must clean up
 /// its process; dropping this continuation is not process-exit proof.
+/// Run the family-53 coalescing case. The driver sends `orch_request_launch`
+/// after validating the independent join and old-process absence; the
+/// supervisor must not launch a replacement before that authorization.
 pub fn run_coalescing(continuation: Continuation) -> Result<SchedulerContinuation> {
     let Continuation { runtime, state } = continuation;
     let state = runtime.block_on(execute(state))?;
@@ -984,4 +1039,822 @@ mod tests {
         assert!(closed(&json!({"a": 1}), &["a"]).is_ok());
         assert!(closed(&json!({"a": 1, "b": 2}), &["a"]).is_err());
     }
+}
+#[cfg(feature = "scheduler-test-seam")]
+mod physical_b {
+    use super::*;
+    use crate::contract::{exact, ids_sha};
+    use rustv1::{
+        http_serve::{
+            deterministic::SchedulerControl, validate_output, App, Backend, BoundedListener, Code,
+            Config, ControlCommand, Lifecycle, Logger, Service, StartupCheck, TextTokenizer,
+        },
+        model::{BatchedExecution, ExecutionRow},
+    };
+    use std::{
+        sync::{Arc, Mutex, MutexGuard},
+        time::Duration,
+    };
+    use tokio::{
+        net::TcpListener,
+        sync::oneshot,
+        time::{sleep, timeout},
+    };
+
+    const CASE: &str = "family-54-physical-b-capacity";
+    const FOLLOWING: &str = "family-54-padded-token-capacity";
+    const WATCHDOG: Duration = Duration::from_secs(30);
+
+    fn service_result<T>(result: std::result::Result<T, Code>) -> Result<T> {
+        result.map_err(|code| anyhow::anyhow!("controlled Service: {code:?}"))
+    }
+
+    fn guard<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+        mutex.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    fn vector(token: u32) -> Vec<f32> {
+        let mut row = vec![0.0; 2048];
+        row[token as usize % 2048] = 1.0;
+        row
+    }
+
+    struct Tokenizer;
+
+    impl TextTokenizer for Tokenizer {
+        fn encode(&self, text: &str) -> std::result::Result<Vec<u32>, Code> {
+            let token = text
+                .strip_prefix("token-")
+                .ok_or(Code::InvalidRequest)?
+                .parse::<u32>()
+                .map_err(|_| Code::InvalidRequest)?;
+            // The production validate_tokens gate remains authoritative.
+            Ok(vec![token])
+        }
+    }
+
+    #[derive(Default)]
+    struct Recording {
+        records: Vec<Value>,
+        next_forward: u64,
+    }
+
+    struct ControlledBackend {
+        recording: Arc<Mutex<Recording>>,
+    }
+
+    impl Backend for ControlledBackend {
+        fn forward(&mut self, batches: &[Vec<u32>]) -> std::result::Result<Vec<Vec<f32>>, Code> {
+            let output: Vec<Vec<f32>> = batches.iter().map(|ids| vector(ids[0])).collect();
+            guard(&self.recording).records.push(json!({
+                "kind": "controlled_startup",
+                "backend": "synthetic_scheduler_probe",
+                "tokens": batches,
+                "output_sha256": output.iter()
+                    .map(|row| sha(&row_bytes(row))).collect::<Vec<_>>()
+            }));
+            Ok(output)
+        }
+
+        fn forward_batch(
+            &mut self,
+            batches: &[Vec<u32>],
+            associations: &[ExecutionRow],
+        ) -> std::result::Result<Vec<Vec<f32>>, Code> {
+            // Record what the production scheduler actually supplied.
+            // Do not impose the expected batch layout inside the backend.
+            let b = batches.len();
+            let s = batches.iter().map(Vec::len).max().unwrap_or(0);
+            let valid = batches.iter().map(Vec::len).sum::<usize>();
+            let output: Vec<Vec<f32>> = batches.iter().map(|ids| vector(ids[0])).collect();
+
+            let mut recording = guard(&self.recording);
+            let id = recording.next_forward;
+            recording.next_forward += 1;
+
+            let members: Vec<Value> = batches
+                .iter()
+                .zip(associations)
+                .enumerate()
+                .map(|(physical_row, (ids, association))| {
+                    json!({
+                        "physical_row": physical_row,
+                        "request_id": association.request_id,
+                        "request_row": association.request_row,
+                        "case_id": association.case_id,
+                        "valid_length": ids.len(),
+                        "token_sha256": ids_sha(ids)
+                    })
+                })
+                .collect();
+
+            let begin = json!({
+                "kind": "controlled_backend_forward_begin",
+                "backend": "synthetic_scheduler_probe",
+                "forward_id": id,
+                "B": b,
+                "S": s,
+                "projection_rows": b * s,
+                "attention_cells_before_heads": b * s * s,
+                "valid_tokens": valid,
+                "padding_tokens": b * s - valid,
+                "input_rows": batches.len(),
+                "association_rows": associations.len(),
+                "rows": members
+            });
+            recording.records.push(begin.clone());
+
+            let mut end = begin;
+            end["kind"] = json!("controlled_backend_forward_end");
+            end["status"] = json!("ok");
+            end["rows"] = json!(members
+                .iter()
+                .zip(&output)
+                .map(|(member, row)| {
+                    let mut member = member.clone();
+                    member["output_sha256"] = json!(sha(&row_bytes(row)));
+                    member
+                })
+                .collect::<Vec<_>>());
+            recording.records.push(end);
+            Ok(output)
+        }
+
+        fn inject_policy_drift(&mut self) -> std::result::Result<(), Code> {
+            Err(Code::InvalidRequest)
+        }
+
+        fn restore_policy(&mut self) -> std::result::Result<(), Code> {
+            Err(Code::InvalidRequest)
+        }
+    }
+
+    #[derive(Clone)]
+    struct Plan {
+        case: String,
+        tokens: Vec<u32>,
+        body: Value,
+    }
+
+    fn plans() -> Vec<Plan> {
+        let mut token = 100u32;
+        [8usize, 8, 8, 8, 1]
+            .into_iter()
+            .enumerate()
+            .map(|(position, count)| {
+                let tokens: Vec<u32> = (token..token + count as u32).collect();
+                token += count as u32;
+                Plan {
+                    case: format!("sched54-b-request-{position}"),
+                    body: json!({
+                        "model": MODEL_ID,
+                        "input": tokens.iter()
+                            .map(|token| format!("token-{token}"))
+                            .collect::<Vec<_>>(),
+                        "encoding_format": "float"
+                    }),
+                    tokens,
+                }
+            })
+            .collect()
+    }
+
+    async fn find_event(
+        control: &SchedulerControl,
+        predicate: impl Fn(&Value) -> bool,
+    ) -> Result<Value> {
+        timeout(WATCHDOG, async {
+            let mut index = 0;
+            loop {
+                let event = service_result(control.event(index).await)?;
+                if predicate(&event) {
+                    return Ok(event);
+                }
+                index += 1;
+            }
+        })
+        .await
+        .context("scheduler event watchdog; not an assembly-time witness")?
+    }
+
+    async fn checkpoint(control: &SchedulerControl, stage: &str, first: u64) -> Result<Value> {
+        find_event(control, |event| {
+            event["kind"] == "checkpoint"
+                && event["stage"] == stage
+                && event["request_ids"][0] == first
+        })
+        .await
+    }
+
+    fn release(control: &SchedulerControl, event: &Value) -> Result<()> {
+        service_result(control.release(usize::try_from(uint(event, "seq")?)?))
+    }
+
+    async fn observe(app: &App) -> Result<Value> {
+        Ok(serde_json::to_value(service_result(
+            app.control(ControlCommand::Observe).await,
+        )?)?)
+    }
+
+    fn decode(reply: &http::Reply, plan: &Plan) -> Result<Vec<Vec<f32>>> {
+        ensure!(reply.status == 200, "controlled request failed");
+        let body: Value = serde_json::from_slice(&reply.bytes)?;
+        closed(&body, &["object", "data", "model", "usage"])?;
+        ensure!(
+            body["object"] == "list"
+                && body["model"] == MODEL_ID
+                && body["usage"]
+                    == json!({
+                        "prompt_tokens": plan.tokens.len(),
+                        "total_tokens": plan.tokens.len()
+                    }),
+            "controlled response schema/usage"
+        );
+        let data = body["data"]
+            .as_array()
+            .context("controlled response rows")?;
+        ensure!(data.len() == plan.tokens.len(), "response row count");
+        let mut output = Vec::new();
+        for (position, item) in data.iter().enumerate() {
+            closed(item, &["object", "index", "embedding"])?;
+            ensure!(
+                item["object"] == "embedding" && item["index"] == position,
+                "controlled output association"
+            );
+            output.push(serde_json::from_value::<Vec<f32>>(
+                item["embedding"].clone(),
+            )?);
+        }
+        service_result(validate_output(&output, plan.tokens.len()))?;
+        let expected: Vec<Vec<f32>> = plan.tokens.iter().map(|token| vector(*token)).collect();
+        exact(&output, &expected)?;
+        Ok(output)
+    }
+
+    fn reconcile(
+        records: &[Value],
+        events: &[Value],
+        insertion: &[Value],
+        requests: &BTreeMap<u64, (Plan, Vec<Vec<f32>>)>,
+    ) -> Result<Value> {
+        ensure!(
+            insertion.len() == 5 && requests.len() == 5,
+            "request coverage"
+        );
+        ensure!(records.len() == 5, "unexpected controlled backend calls");
+        ensure!(
+            records[0]
+                == json!({
+                    "kind": "controlled_startup",
+                    "backend": "synthetic_scheduler_probe",
+                    "tokens": [[100]],
+                    "output_sha256": [sha(&row_bytes(&vector(100)))]
+                }),
+            "controlled startup reconciliation"
+        );
+
+        let ids: Vec<u64> = insertion
+            .iter()
+            .map(|event| uint(event, "request_id"))
+            .collect::<Result<_>>()?;
+        ensure!(
+            ids.iter().copied().collect::<BTreeSet<_>>().len() == 5,
+            "duplicate acknowledged request ID"
+        );
+        let all_inserted: Vec<&Value> = events
+            .iter()
+            .filter(|event| event["kind"] == "inserted")
+            .collect();
+        ensure!(
+            all_inserted.len() == 5 && all_inserted.iter().zip(insertion).all(|(a, b)| *a == b),
+            "unmatched or reordered insertion events"
+        );
+        for (position, event) in insertion.iter().enumerate() {
+            ensure!(
+                event["inserted_us"] == 0
+                    && event["deadline_us"] == 60_000_000
+                    && event["S"] == 1
+                    && event["B"] == if position == 4 { 1 } else { 8 },
+                "insertion geometry/time"
+            );
+        }
+
+        let launches: Vec<&Value> = events
+            .iter()
+            .filter(|event| event["kind"] == "launch")
+            .collect();
+        ensure!(launches.len() == 2, "unexpected launch decisions");
+        let expected_members = [&ids[..4], &ids[4..]];
+        let expected_b = [32usize, 1];
+
+        let mut seen = BTreeSet::new();
+        for forward in 0..2 {
+            let members = expected_members[forward];
+            let b = expected_b[forward];
+            let launch = launches[forward];
+            ensure!(
+                launch["request_ids"] == json!(members)
+                    && launch["B"] == b
+                    && launch["S"] == 1
+                    && launch["now_us"] == if forward == 0 { 0 } else { 1000 },
+                "production launch differs from deterministic plan"
+            );
+
+            let begin = &records[1 + forward * 2];
+            let end = &records[2 + forward * 2];
+            ensure!(
+                begin["kind"] == "controlled_backend_forward_begin"
+                    && end["kind"] == "controlled_backend_forward_end"
+                    && end["status"] == "ok",
+                "controlled manifest pair"
+            );
+            let mut expected_rows = Vec::new();
+            let mut completed_rows = Vec::new();
+            for id in members {
+                ensure!(seen.insert(*id), "request executed more than once");
+                let (plan, output) = requests.get(id).context("unknown request")?;
+                for (request_row, token) in plan.tokens.iter().enumerate() {
+                    let row = json!({
+                        "physical_row": expected_rows.len(),
+                        "request_id": id,
+                        "request_row": request_row,
+                        "case_id": plan.case,
+                        "valid_length": 1,
+                        "token_sha256": ids_sha(&[*token])
+                    });
+                    let mut completed = row.clone();
+                    completed["output_sha256"] = json!(sha(&row_bytes(&output[request_row])));
+                    expected_rows.push(row);
+                    completed_rows.push(completed);
+                }
+            }
+            ensure!(expected_rows.len() == b, "physical row count");
+            for record in [begin, end] {
+                ensure!(
+                    record["backend"] == "synthetic_scheduler_probe"
+                        && record["forward_id"] == forward
+                        && record["B"] == b
+                        && record["S"] == 1
+                        && record["projection_rows"] == b
+                        && record["attention_cells_before_heads"] == b
+                        && record["valid_tokens"] == b
+                        && record["padding_tokens"] == 0
+                        && record["input_rows"] == b
+                        && record["association_rows"] == b,
+                    "controlled manifest geometry/accounting"
+                );
+            }
+            ensure!(
+                begin["rows"] == json!(expected_rows) && end["rows"] == json!(completed_rows),
+                "controlled manifest input/output association"
+            );
+        }
+        ensure!(
+            seen.len() == requests.len(),
+            "unexecuted successful request"
+        );
+
+        let assemblies: Vec<&Value> = events
+            .iter()
+            .filter(|event| event["kind"] == "assembly")
+            .collect();
+        ensure!(assemblies.len() == 5, "assembly decision coverage");
+        for (position, b) in [8usize, 16, 24, 32, 1].into_iter().enumerate() {
+            let members = if position == 4 {
+                &ids[4..]
+            } else {
+                &ids[..position + 1]
+            };
+            ensure!(
+                assemblies[position]["B"] == b
+                    && assemblies[position]["S"] == 1
+                    && assemblies[position]["request_ids"] == json!(members)
+                    && assemblies[position]["boundary_us"] == 1000,
+                "production assembly progression/boundary"
+            );
+        }
+
+        let policy = BatchedExecution::default();
+        ensure!(
+            policy.fits(32, 1)
+                && !policy.fits(33, 1)
+                && 33 < policy.max_padded_tokens
+                && 33 < policy.max_attention_cells,
+            "B capacity is not the isolated limiting dimension"
+        );
+        Ok(json!({
+            "submitted_logical_requests": 5,
+            "submitted_real_rows": 33,
+            "physical_batches": [32, 1],
+            "physical_widths": [1, 1],
+            "first_batch_request_ids": ids[..4],
+            "overflow_request_id": ids[4],
+            "all_requests_intact": true,
+            "dummy_rows": 0,
+            "unmatched_backend_records": 0,
+            "unmatched_insertions": 0,
+            "numerical_model_evidence": false,
+            "backend": "synthetic_scheduler_probe",
+            "capacity_witness": "production_B_ceiling_with_33_acknowledged_real_rows"
+        }))
+    }
+
+    async fn local(loaded: &Loaded, out: &Path) -> Result<Value> {
+        private_directory(out)?;
+        let control = SchedulerControl::new();
+        let recording = Arc::new(Mutex::new(Recording::default()));
+        let mut config = Config::production(64, 131072, 1024);
+        config.batching = Some(loaded.bundle.shapes.batching.clone());
+        config.scheduler_control = Some(control.clone());
+        let instance = format!("sched54-{}", core::random_label()?);
+        config.instance = Some(instance.clone());
+        service_result(config.validate())?;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let listener = service_result(BoundedListener::new(listener, &config.transport))?;
+        let backend_recording = recording.clone();
+        let mut service = service_result(Service::spawn(
+            config,
+            Arc::new(Tokenizer),
+            Logger::new(std::io::sink()),
+            StartupCheck {
+                tokens: vec![vec![100]],
+                embeddings: vec![vector(100)],
+            },
+            move || {
+                Ok(ControlledBackend {
+                    recording: backend_recording,
+                })
+            },
+        ))?;
+        let app = service.app.clone();
+        let router = app.router();
+        let (stop, stopped) = oneshot::channel();
+        let mut server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async {
+                    let _ = stopped.await;
+                })
+                .await
+        });
+        let mut tasks = JoinSet::new();
+
+        // No ? outside this work block after creating the owners until cleanup.
+        let work: Result<Value> = async {
+            service_result(service.wait_ready().await)?;
+            let before = observe(&app).await?;
+            ensure!(
+                before["instance"] == instance
+                    && before["pid"] == std::process::id()
+                    && before["lifecycle"] == "ready"
+                    && before["ready"] == true
+                    && before["worker_alive"] == true
+                    && before["forward_calls"] == 0,
+                "controlled initial observation"
+            );
+
+            let mut insertion = Vec::new();
+            for plan in plans() {
+                write_new(
+                    &out.join(format!("{}.request.bin", plan.case)),
+                    &serde_json::to_vec(&plan.body)?,
+                )?;
+                let limits: Limits = serde_json::from_value(loaded.policy["limits"].clone())?;
+                let client = Http::new(&format!("http://{address}"), &instance, limits)?;
+                let case = plan.case.clone();
+                tasks.spawn(async move {
+                    let wire = Wire::json(plan.body.clone())?;
+                    let reply = client.send(&plan.case, &wire).await?;
+                    Ok::<_, anyhow::Error>((plan, reply))
+                });
+                insertion.push(
+                    find_event(&control, |event| {
+                        event["kind"] == "inserted" && event["case_id"] == case
+                    })
+                    .await?,
+                );
+            }
+
+            let ids: Vec<u64> = insertion
+                .iter()
+                .map(|event| uint(event, "request_id"))
+                .collect::<Result<_>>()?;
+
+            let first = checkpoint(&control, "assembly_start", ids[0]).await?;
+            ensure!(
+                guard(&recording).records.len() == 1,
+                "backend ran before assembly release"
+            );
+            release(&control, &first)?;
+
+            let assembled = checkpoint(&control, "assembled", ids[0]).await?;
+            ensure!(
+                assembled["request_ids"] == json!(&ids[..4])
+                    && assembled["B"] == 32
+                    && assembled["S"] == 1
+                    && assembled["boundary_us"] == 1000
+                    && assembled["now_us"] == 0,
+                "B32 was not assembled at frozen time"
+            );
+            release(&control, &assembled)?;
+
+            let second = checkpoint(&control, "assembly_start", ids[4]).await?;
+            release(&control, &second)?;
+            let second_seq = uint(&second, "seq")?;
+            find_event(&control, |event| {
+                event["kind"] == "assembly_receive"
+                    && event["seq"].as_u64().is_some_and(|seq| seq > second_seq)
+            })
+            .await?;
+            service_result(control.advance_to_us(1000))?;
+
+            let tail = checkpoint(&control, "assembled", ids[4]).await?;
+            ensure!(
+                tail["request_ids"] == json!(&ids[4..])
+                    && tail["B"] == 1
+                    && tail["boundary_us"] == 1000
+                    && tail["now_us"] == 1000,
+                "overflow request assembly"
+            );
+            release(&control, &tail)?;
+
+            let mut requests = BTreeMap::new();
+            let mut responses = Vec::new();
+            while let Some(joined) = tasks.join_next().await {
+                let (plan, reply) = joined.context("controlled client task")??;
+                write_new(
+                    &out.join(format!("{}.response.bin", plan.case)),
+                    &reply.bytes,
+                )?;
+                let id = reply.request_id.context("controlled response ID")?;
+                let acknowledged = insertion
+                    .iter()
+                    .find(|event| event["case_id"] == plan.case)
+                    .context("response without insertion")?;
+                ensure!(acknowledged["request_id"] == id, "ack/HTTP ID mismatch");
+                let output = decode(&reply, &plan)?;
+                responses.push(json!({
+                    "case_id": plan.case,
+                    "request_id": id,
+                    "http_status": reply.status,
+                    "headers": reply.headers,
+                    "response_sha256": sha(&reply.bytes)
+                }));
+                ensure!(
+                    requests.insert(id, (plan, output)).is_none(),
+                    "duplicate controlled response"
+                );
+            }
+
+            let after = observe(&app).await?;
+            logical_delta(&before, &after, 5)?;
+            let events = service_result(control.snapshot())?;
+            let records = guard(&recording).records.clone();
+            let reconciliation = reconcile(&records, &events, &insertion, &requests)?;
+
+            Ok(json!({
+                "schema": "rustv1.accept_m4_controlled_b_capacity.v1",
+                "case_id": CASE,
+                "instance": instance,
+                "pid": std::process::id(),
+                "batching": loaded.bundle.shapes.batching,
+                "max_sequence_tokens": 1024,
+                "semantic_clock": "manual_microseconds",
+                "watchdogs_are_capacity_witnesses": false,
+                "observation_before": before,
+                "observation_after": after,
+                "responses": responses,
+                "insertion_acknowledgements": insertion,
+                "scheduler_events": events,
+                "backend_records": records,
+                "reconciliation": reconciliation
+            }))
+        }
+        .await;
+
+        // Cleanup is unconditional, including errors in event checks or I/O.
+        // Admission is closed before allowing clock/progress to drain.
+        app.begin_drain();
+        control.open_for_cleanup();
+
+        // A cleanup-only clock pump prevents already-admitted tokenization
+        // from inserting a new job after the last manual clock advance.
+        // Its timing is never used as capacity evidence.
+        let cleanup_control = control.clone();
+        let (pump_stop, mut pump_stopped) = oneshot::channel();
+        let pump = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut pump_stopped => return Ok::<(), Code>(()),
+                    _ = sleep(Duration::from_millis(1)) => {
+                        cleanup_control.advance_by_us(1000)?;
+                    }
+                }
+            }
+        });
+
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
+
+        let shutdown = service_result(service.shutdown().await);
+        let _ = stop.send(());
+        let transport = match timeout(WATCHDOG, &mut server).await {
+            Ok(Ok(Ok(()))) => Ok(()),
+            other => {
+                server.abort();
+                let _ = server.await;
+                Err(anyhow::anyhow!("controlled HTTP cleanup failed: {other:?}"))
+            }
+        };
+        let _ = pump_stop.send(());
+        let pump_result = pump
+            .await
+            .context("cleanup clock task")
+            .and_then(service_result);
+
+        if let Err(error) = work {
+            return Err(error).with_context(|| {
+                format!(
+                    "controlled case failed; owner_join_ok={}, http_join_ok={}, clock_join_ok={}",
+                    shutdown.is_ok(),
+                    transport.is_ok(),
+                    pump_result.is_ok()
+                )
+            });
+        }
+        let mut evidence = work?;
+        shutdown?;
+        transport?;
+        pump_result?;
+        ensure!(
+            app.lifecycle() == Lifecycle::Stopped && !app.is_ready(),
+            "controlled owner did not stop after join"
+        );
+
+        let final_records = guard(&recording).records.clone();
+        ensure!(
+            evidence["backend_records"] == json!(final_records),
+            "additional backend execution during cleanup"
+        );
+        let final_events = service_result(control.snapshot())?;
+        ensure!(
+            evidence["scheduler_events"] == json!(final_events),
+            "additional scheduler activity during successful cleanup"
+        );
+
+        let mut manifest_bytes = Vec::new();
+        for record in &final_records {
+            serde_json::to_writer(&mut manifest_bytes, record)?;
+            manifest_bytes.push(b'\n');
+        }
+        write_new(
+            &out.join("controlled_backend_manifest.jsonl"),
+            &manifest_bytes,
+        )?;
+        write_new(
+            &out.join("scheduler_events.json"),
+            &serde_json::to_vec_pretty(&final_events)?,
+        )?;
+        evidence["cleanup"] = json!({
+            "service_shutdown_returned_ok": true,
+            "owner_thread_joined": true,
+            "http_server_joined": true,
+            "cleanup_clock_task_joined": true,
+            "lifecycle": "stopped",
+            "ready": false,
+            "quarantine_cleared": false,
+            "drop_counted_as_join": false
+        });
+        evidence["backend_manifest_sha256"] = json!(sha(&manifest_bytes));
+        evidence["scheduler_phase_complete"] = json!(false);
+        evidence["m4_accepted"] = json!(false);
+        Ok(evidence)
+    }
+
+    async fn execute(mut state: SchedulerState) -> Result<SchedulerState> {
+        ensure!(
+            state.core.ledger.pending().first()
+                == Some(&json!({
+                    "acceptance_phase": policy::SCHEDULER,
+                    "case_id": CASE
+                })),
+            "physical-B runner called at wrong ledger position"
+        );
+
+        let result: Result<Value> = async {
+            state.core.loaded.recheck()?;
+            envelope(&state.core.loaded)?;
+            state.launch.process.check_live()?;
+            ensure!(
+                state.core.control.call("observe", None).await? == state.observation
+                    && bounded(&state.launch.manifest, MANIFEST_LIMIT)? == state.manifest_prefix,
+                "unreconciled live activity before controlled case"
+            );
+
+            let out = state.directory.join("family-54-physical-b");
+            let mut evidence = local(&state.core.loaded, &out).await?;
+
+            // Do not discard or rebaseline the live family-53 cursor.
+            state.launch.process.check_live()?;
+            ensure!(
+                state.core.control.call("observe", None).await? == state.observation
+                    && bounded(&state.launch.manifest, MANIFEST_LIMIT)? == state.manifest_prefix,
+                "live server changed during controlled case"
+            );
+            state.core.loaded.recheck()?;
+            state.core.orchestration.sync()?;
+
+            evidence["policy_sha256"] = json!(state.core.loaded.policy_sha256);
+            evidence["driver_binary_sha256"] =
+                json!(state.core.loaded.artifacts["accept_m4"].sha256);
+            evidence["live_manifest_unchanged_sha256"] = json!(sha(&state.manifest_prefix));
+
+            let evidence_sha = save_json(&out.join("evidence.json"), &evidence)?;
+            Ok(json!({
+                "evidence_path": "scheduler/family-54-physical-b/evidence.json",
+                "evidence_sha256": evidence_sha,
+                "backend": "synthetic_scheduler_probe",
+                "production_scheduler_used": true,
+                "physical_batches": [32, 1],
+                "unmatched_backend_records": 0,
+                "local_owner_joined": true,
+                "local_http_server_joined": true,
+                "numerical_model_evidence": false
+            }))
+        }
+        .await;
+
+        match result {
+            Ok(details) => {
+                state
+                    .core
+                    .ledger
+                    .append(policy::SCHEDULER, CASE, true, details, true)?
+            }
+            Err(error) => {
+                let _ = state.core.ledger.append(
+                    policy::SCHEDULER,
+                    CASE,
+                    false,
+                    json!({"error": format!("{error:#}")}),
+                    true,
+                );
+                return Err(error);
+            }
+        }
+        ensure!(
+            state.core.ledger.pending().first()
+                == Some(&json!({
+                    "acceptance_phase": policy::SCHEDULER,
+                    "case_id": FOLLOWING
+                })),
+            "unexpected post-capacity ledger position"
+        );
+        Ok(state)
+    }
+
+    pub(super) fn run(continuation: SchedulerContinuation) -> Result<SchedulerContinuation> {
+        let SchedulerContinuation { runtime, state } = continuation;
+        let state = runtime.block_on(execute(state))?;
+        Ok(SchedulerContinuation { runtime, state })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn plan_crosses_only_the_b_ceiling() {
+            let plans = plans();
+            assert_eq!(
+                plans
+                    .iter()
+                    .map(|plan| plan.tokens.len())
+                    .collect::<Vec<_>>(),
+                vec![8, 8, 8, 8, 1]
+            );
+            let tokens: BTreeSet<u32> = plans
+                .iter()
+                .flat_map(|plan| plan.tokens.iter().copied())
+                .collect();
+            assert_eq!(tokens.len(), 33);
+            let policy = BatchedExecution::default();
+            assert!(policy.fits(32, 1));
+            assert!(!policy.fits(33, 1));
+            for token in tokens {
+                assert!(validate_output(&[vector(token)], 1).is_ok());
+            }
+        }
+    }
+}
+
+/// Execute exactly family-54-physical-b-capacity.
+///
+/// No dispatcher completion arm and no global completion marker are added.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_physical_b_capacity(
+    continuation: SchedulerContinuation,
+) -> Result<SchedulerContinuation> {
+    physical_b::run(continuation)
 }

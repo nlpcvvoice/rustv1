@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 cuda = ["candle-core/cuda", "candle-nn/cuda"]
+scheduler-test-seam = []
 
 [[bin]]
 name = "gpu_smoke"

@@ -44,6 +44,10 @@ use tokio::{
     time::{sleep, timeout, timeout_at, Instant as TokioInstant, Sleep},
 };
 
+#[cfg(feature = "scheduler-test-seam")]
+#[path = "http_serve_deterministic.rs"]
+pub mod deterministic;
+
 pub const MODEL_ID: &str = "nvidia/Nemotron-3-Embed-1B";
 pub const EMBEDDING_WIDTH: usize = 2048;
 pub const BODY_LIMIT: usize = 1_048_576;
@@ -79,6 +83,8 @@ pub struct Config {
     /// None retains the independent compatibility server for existing callers.
     /// The production batched binary always supplies Some(policy_bound_limits).
     pub batching: Option<BatchedExecution>,
+    #[cfg(feature = "scheduler-test-seam")]
+    pub scheduler_control: Option<deterministic::SchedulerControl>,
 }
 
 impl Config {
@@ -105,6 +111,8 @@ impl Config {
                 connection_timeout: Duration::from_secs(90),
             },
             batching: None,
+            #[cfg(feature = "scheduler-test-seam")]
+            scheduler_control: None,
         }
     }
 
@@ -591,6 +599,61 @@ struct Shared {
 }
 
 impl Shared {
+    #[inline]
+    fn now(&self) -> Instant {
+        #[cfg(feature = "scheduler-test-seam")]
+        if let Some(control) = &self.config.scheduler_control {
+            return control.now();
+        }
+        Instant::now()
+    }
+
+    async fn sleep_until(&self, deadline: Instant) {
+        #[cfg(feature = "scheduler-test-seam")]
+        if let Some(control) = &self.config.scheduler_control {
+            control.sleep_until(deadline).await;
+            return;
+        }
+        sleep(deadline.saturating_duration_since(Instant::now())).await;
+    }
+
+    async fn request_timeout_at<F: Future>(
+        &self,
+        deadline: Instant,
+        future: F,
+    ) -> Result<F::Output, Code> {
+        #[cfg(feature = "scheduler-test-seam")]
+        if let Some(control) = &self.config.scheduler_control {
+            return tokio::select! {
+                biased;
+                result = future => Ok(result),
+                _ = control.sleep_until(deadline) => Err(Code::DeadlineExceeded),
+            };
+        }
+        timeout_at(TokioInstant::from_std(deadline), future)
+            .await
+            .map_err(|_| Code::DeadlineExceeded)
+    }
+
+    async fn assembly_receive(
+        &self,
+        receiver: &mut mpsc::Receiver<Message>,
+        boundary: Instant,
+    ) -> Result<Option<Message>, Code> {
+        #[cfg(feature = "scheduler-test-seam")]
+        if let Some(control) = &self.config.scheduler_control {
+            control.waiting(boundary);
+            return tokio::select! {
+                biased;
+                _ = control.sleep_until(boundary) => Err(Code::DeadlineExceeded),
+                message = receiver.recv() => Ok(message),
+            };
+        }
+        timeout_at(TokioInstant::from_std(boundary), receiver.recv())
+            .await
+            .map_err(|_| Code::DeadlineExceeded)
+    }
+
     fn instance(&self) -> &str {
         self.config
             .instance
@@ -761,7 +824,7 @@ impl BackendHandle {
             if core.state.terminal() || !core.worker_alive {
                 return Err(Code::ExecutorPoisoned);
             }
-            if Instant::now() >= deadline {
+            if self.shared.now() >= deadline {
                 return Err(Code::DeadlineExceeded);
             }
             let queue_slot = self
@@ -773,19 +836,31 @@ impl BackendHandle {
                 request_id,
                 case_id,
                 batches,
-                inserted: Instant::now(),
+                inserted: self.shared.now(),
                 deadline,
                 state: state.clone(),
                 reply,
                 admission,
                 queue_slot: Some(queue_slot),
             };
+            #[cfg(feature = "scheduler-test-seam")]
+            let insertion = self
+                .shared
+                .config
+                .scheduler_control
+                .as_ref()
+                .map(|control| control.insertion(&job));
             self.tx
                 .try_send(Message::Infer(job))
                 .map_err(|error| match error {
                     mpsc::error::TrySendError::Full(_) => Code::QueueFull,
                     mpsc::error::TrySendError::Closed(_) => Code::ExecutorPoisoned,
                 })?;
+            #[cfg(feature = "scheduler-test-seam")]
+            if let (Some(control), Some(event)) = (&self.shared.config.scheduler_control, insertion)
+            {
+                control.emit(event);
+            }
         }
 
         tokio::select! {
@@ -809,7 +884,7 @@ impl BackendHandle {
                 }
                 Err(code)
             }
-            _ = sleep(deadline.saturating_duration_since(Instant::now())) => {
+            _ = self.shared.sleep_until(deadline) => {
                 let running = {
                     let mut core = lock(&self.shared.core);
                     let mut state = lock(&state);
@@ -968,6 +1043,12 @@ impl App {
         started: Instant,
         permit: Arc<OwnedSemaphorePermit>,
     ) -> Result<Response, Code> {
+        #[cfg(feature = "scheduler-test-seam")]
+        let started = if self.config.scheduler_control.is_some() {
+            self.backend.shared.now()
+        } else {
+            started
+        };
         let deadline = started + self.config.request_timeout;
         let case_id = request
             .headers()
@@ -978,7 +1059,7 @@ impl App {
         let read_budget = self
             .config
             .body_timeout
-            .min(deadline.saturating_duration_since(Instant::now()));
+            .min(deadline.saturating_duration_since(self.backend.shared.now()));
         let bytes = timeout(read_budget, Bytes::from_request(request, &()))
             .await
             .map_err(|_| Code::DeadlineExceeded)?
@@ -996,13 +1077,13 @@ impl App {
         }
         let encoding = Encoding::parse(parsed.encoding_format)?;
         let texts = parsed.input.texts()?;
-        let tokenizer_permit = timeout_at(
-            TokioInstant::from_std(deadline),
-            self.tokenizers.clone().acquire_owned(),
-        )
-        .await
-        .map_err(|_| Code::DeadlineExceeded)?
-        .map_err(|_| Code::NotReady)?;
+        let tokenizer_permit = self
+            .backend
+            .shared
+            .request_timeout_at(deadline, self.tokenizers.clone().acquire_owned())
+            .await
+            .map_err(|_| Code::DeadlineExceeded)?
+            .map_err(|_| Code::NotReady)?;
 
         let tokenizer = self.tokenizer.clone();
         let config = self.config.clone();
@@ -1023,18 +1104,21 @@ impl App {
             }
             Ok::<_, Code>((batches, tokens))
         });
-        let (batches, tokens) = timeout_at(TokioInstant::from_std(deadline), work)
+        let (batches, tokens) = self
+            .backend
+            .shared
+            .request_timeout_at(deadline, work)
             .await
             .map_err(|_| Code::DeadlineExceeded)?
             .map_err(|_| Code::InvalidRequest)??;
-        if Instant::now() >= deadline {
+        if self.backend.shared.now() >= deadline {
             return Err(Code::DeadlineExceeded);
         }
         let rows = self
             .backend
             .infer(id, case_id, batches, deadline, permit)
             .await?;
-        if Instant::now() >= deadline {
+        if self.backend.shared.now() >= deadline {
             return Err(Code::DeadlineExceeded);
         }
         Ok(success(rows, encoding, tokens))
@@ -1181,6 +1265,10 @@ impl Service {
             validate_tokens(std::slice::from_ref(row), &config)?;
         }
         validate_output(&check.embeddings, check.tokens.len())?;
+        #[cfg(feature = "scheduler-test-seam")]
+        if let Some(control) = &config.scheduler_control {
+            control.claim()?;
+        }
         let config = Arc::new(config);
         let (terminal, _) = watch::channel(false);
         let shared = Arc::new(Shared {
@@ -1358,9 +1446,7 @@ fn queued_error(shared: &Shared, job: &Job) -> Option<Code> {
     let state = lock(&job.state);
     if core.state.terminal() {
         Some(Code::ExecutorPoisoned)
-    } else if state.phase == Phase::Expired
-        || Instant::now() >= job.deadline
-        || job.reply.is_closed()
+    } else if state.phase == Phase::Expired || shared.now() >= job.deadline || job.reply.is_closed()
     {
         Some(state.error.unwrap_or(Code::DeadlineExceeded))
     } else {
@@ -1418,6 +1504,10 @@ fn worker_loop<B: Backend>(
                     finish_error(shared, first, code);
                     continue;
                 }
+                #[cfg(feature = "scheduler-test-seam")]
+                if let Some(control) = &shared.config.scheduler_control {
+                    control.checkpoint("assembly_start", std::slice::from_ref(&first), None);
+                }
                 let mut jobs = vec![first];
                 if let Some(policy) = &shared.config.batching {
                     let mut b = jobs[0].batches.len();
@@ -1426,17 +1516,21 @@ fn worker_loop<B: Backend>(
                         + Duration::from_micros(policy.max_wait_us))
                     .min(jobs[0].deadline);
 
-                    while b < policy.max_batch_size && Instant::now() < boundary {
-                        let next = runtime.block_on(async {
-                            timeout_at(TokioInstant::from_std(boundary), receiver.recv()).await
-                        });
+                    #[cfg(feature = "scheduler-test-seam")]
+                    if let Some(control) = &shared.config.scheduler_control {
+                        control.assembly(&jobs, boundary);
+                    }
+
+                    while b < policy.max_batch_size && shared.now() < boundary {
+                        let next =
+                            runtime.block_on(shared.assembly_receive(&mut receiver, boundary));
                         let message = match next {
                             Ok(Some(message)) => message,
                             Ok(None) | Err(_) => break,
                         };
                         // A receive becoming ready at the boundary must not
                         // extend assembly, even if the channel remains full.
-                        if Instant::now() >= boundary {
+                        if shared.now() >= boundary {
                             pending = Some(message);
                             break;
                         }
@@ -1457,12 +1551,20 @@ fn worker_loop<B: Backend>(
                                 b = next_b;
                                 s = next_s;
                                 jobs.push(job);
+                                #[cfg(feature = "scheduler-test-seam")]
+                                if let Some(control) = &shared.config.scheduler_control {
+                                    control.assembly(&jobs, boundary);
+                                }
                             }
                             control => {
                                 pending = Some(control);
                                 break;
                             }
                         }
+                    }
+                    #[cfg(feature = "scheduler-test-seam")]
+                    if let Some(control) = &shared.config.scheduler_control {
+                        control.checkpoint("assembled", &jobs, Some(boundary));
                     }
                 }
                 run_batch(backend, shared, jobs);
@@ -1509,7 +1611,7 @@ fn run_batch<B: Backend>(backend: &mut B, shared: &Shared, jobs: Vec<Job>) {
             }
             return;
         }
-        let now = Instant::now();
+        let now = shared.now();
         if live.iter().any(|job| {
             let state = lock(&job.state);
             state.phase != Phase::Queued || now >= job.deadline || job.reply.is_closed()
@@ -1541,6 +1643,10 @@ fn run_batch<B: Backend>(backend: &mut B, shared: &Shared, jobs: Vec<Job>) {
         for job in &mut live {
             lock(&job.state).phase = Phase::Running;
             job.queue_slot.take();
+        }
+        #[cfg(feature = "scheduler-test-seam")]
+        if let Some(control) = &shared.config.scheduler_control {
+            control.launch(&live);
         }
     }
 
@@ -1584,7 +1690,7 @@ fn run_batch<B: Backend>(backend: &mut B, shared: &Shared, jobs: Vec<Job>) {
     let terminal;
     {
         let mut core = lock(&shared.core);
-        let now = Instant::now();
+        let now = shared.now();
         let expired = live
             .iter()
             .any(|job| lock(&job.state).phase == Phase::Expired || now >= job.deadline);

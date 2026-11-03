@@ -417,13 +417,23 @@ impl Orchestration {
     }
 
     pub async fn receive(&mut self) -> Result<Value> {
+        self.receive_with_budget(self.budget).await
+    }
+
+    /// Replacement startup includes server load and startup-check budgets.
+    /// This changes only the receive watchdog, not framing/authentication.
+    pub async fn receive_with_budget(&mut self, budget: Duration) -> Result<Value> {
+        ensure!(
+            !budget.is_zero() && budget <= Duration::from_secs(660),
+            "invalid orchestration receive budget"
+        );
         ensure!(self.usable, "orchestration connection is terminal");
         self.usable = false;
         let next = self
             .receive_sequence
             .checked_add(1)
             .context("receive sequence overflow")?;
-        let bytes = timeout(self.budget, read_frame(&mut self.stream))
+        let bytes = timeout(budget, read_frame(&mut self.stream))
             .await
             .context("orchestration receive deadline")??;
         let envelope: Value = serde_json::from_slice(&bytes)?;
