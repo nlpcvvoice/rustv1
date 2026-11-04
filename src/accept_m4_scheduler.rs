@@ -1824,6 +1824,10 @@ mod physical_b {
         include!("accept_m4_capacity.rs");
     }
 
+    pub(super) mod family55 {
+        include!("accept_m4_family55.rs");
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -1875,4 +1879,13 @@ pub fn run_remaining_capacity(
     continuation: SchedulerContinuation,
 ) -> Result<SchedulerContinuation> {
     physical_b::capacity::run(continuation)
+}
+
+/// Execute the family-55 queue/expiry/wait cases, in global ledger order.
+///
+/// Requires scheduler-test-seam. Returns with
+/// family-56-invalid-last-isolation pending; no completion markers.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_queue_expiry_wait(continuation: SchedulerContinuation) -> Result<SchedulerContinuation> {
+    physical_b::family55::run(continuation)
 }
