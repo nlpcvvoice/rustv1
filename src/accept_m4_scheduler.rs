@@ -1820,6 +1820,10 @@ mod physical_b {
         Ok(SchedulerContinuation { runtime, state })
     }
 
+    pub(super) mod capacity {
+        include!("accept_m4_capacity.rs");
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -1857,4 +1861,18 @@ pub fn run_physical_b_capacity(
     continuation: SchedulerContinuation,
 ) -> Result<SchedulerContinuation> {
     physical_b::run(continuation)
+}
+
+/// Execute the remaining family-54 cases, in global ledger order.
+///
+/// Requires scheduler-test-seam. Uses the unchanged full qualification
+/// envelope and the production Service scheduler.
+///
+/// Returns with family-55-queue-saturation pending. Does not finish the
+/// scheduler phase or the overall acceptance ledger.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_remaining_capacity(
+    continuation: SchedulerContinuation,
+) -> Result<SchedulerContinuation> {
+    physical_b::capacity::run(continuation)
 }
