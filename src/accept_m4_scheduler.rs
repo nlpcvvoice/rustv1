@@ -1828,6 +1828,10 @@ mod physical_b {
         include!("accept_m4_family55.rs");
     }
 
+    pub(super) mod family56_57 {
+        include!("accept_m4_family56_57.rs");
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -1888,4 +1892,17 @@ pub fn run_remaining_capacity(
 #[cfg(feature = "scheduler-test-seam")]
 pub fn run_queue_expiry_wait(continuation: SchedulerContinuation) -> Result<SchedulerContinuation> {
     physical_b::family55::run(continuation)
+}
+
+/// Execute the family-56 pair and family-57 assembled-work quiesce case.
+///
+/// Consumes the continuation returned by run_queue_expiry_wait.
+/// Preserves its runtime and retained live-server reconciliation cursor.
+///
+/// Returns with family-57-drain-running-work pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_invalid_tokens_quiesce(
+    continuation: SchedulerContinuation,
+) -> Result<SchedulerContinuation> {
+    physical_b::family56_57::run(continuation)
 }
