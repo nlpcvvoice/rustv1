@@ -1832,6 +1832,10 @@ mod physical_b {
         include!("accept_m4_family56_57.rs");
     }
 
+    pub(super) mod family57_58 {
+        include!("accept_m4_family57_58.rs");
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -1905,4 +1909,25 @@ pub fn run_invalid_tokens_quiesce(
     continuation: SchedulerContinuation,
 ) -> Result<SchedulerContinuation> {
     physical_b::family56_57::run(continuation)
+}
+
+/// Execute exactly the destructive family-57/58 trio.
+///
+/// Consumes the continuation returned by run_invalid_tokens_quiesce.
+/// Destructive work executes only in reaped child processes.
+///
+/// Returns with scheduler-owners-joined pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_drain_failure_expiry(
+    continuation: SchedulerContinuation,
+) -> Result<SchedulerContinuation> {
+    physical_b::family57_58::run(continuation)
+}
+
+/// Private child-process protocol, not an acceptance-phase dispatcher.
+///
+/// This function terminates the child with a defined exit code.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn scheduler_destructive_child(spec: &str) -> ! {
+    physical_b::family57_58::child_entry(spec)
 }

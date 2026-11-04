@@ -61,6 +61,13 @@ fn dispatch(args: &[String]) -> Result<(&'static str, String)> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "scheduler-test-seam")]
+    if args.get(1).map(String::as_str) == Some("scheduler-destructive-child") {
+        if args.len() != 3 {
+            std::process::exit(2);
+        }
+        acceptance_scheduler::scheduler_destructive_child(&args[2]);
+    }
     let phase = if args.get(1).map(String::as_str) == Some("acceptance-http") {
         "http_reconciliation"
     } else {
