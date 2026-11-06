@@ -554,6 +554,10 @@ impl Local {
         self.tasks.abort_all();
         while self.tasks.join_next().await.is_some() {}
 
+        // Separate from request-task draining: cancelled request futures can
+        // leave connection handles in the strict client's retained inventory.
+        let http_connections = http::join_connections(&self.instance).await?;
+
         let shutdown = self.service.shutdown().await;
         let shutdown_code = shutdown.as_ref().err().copied();
 
@@ -575,6 +579,7 @@ impl Local {
             "shutdown_error": shutdown_code,
             "http_server_joined": transport,
             "client_tasks_drained": self.tasks.is_empty(),
+            "http_connections": http_connections,
             "lifecycle": self.app.lifecycle(),
             "ready": self.app.is_ready(),
             "quarantine_cleared": false,

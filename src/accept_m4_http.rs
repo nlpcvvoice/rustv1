@@ -271,8 +271,10 @@ impl Body for RequestBody {
     }
 }
 
+#[cfg(not(feature = "scheduler-test-seam"))]
 struct AbortConnection(JoinHandle<()>);
 
+#[cfg(not(feature = "scheduler-test-seam"))]
 impl Drop for AbortConnection {
     fn drop(&mut self) {
         self.0.abort();
@@ -344,6 +346,7 @@ impl Http {
         })
     }
 
+    #[cfg(not(feature = "scheduler-test-seam"))]
     pub(crate) async fn send(&self, case: &str, wire: &Wire) -> Result<Reply> {
         ensure!(label_valid(case), "invalid case label");
         ensure!(wire.body.len() <= BODY_LIMIT + 65536, "request size bound");
@@ -1876,3 +1879,8 @@ mod tests {
         assert_eq!(contract::ids_sha(&[1]), sha(&[1, 0, 0, 0]));
     }
 }
+
+// Acceptance-driver ownership instrumentation only. The ordinary client above
+// remains unchanged when scheduler-test-seam is disabled.
+#[cfg(feature = "scheduler-test-seam")]
+include!("accept_m4_http_joined.rs");

@@ -1931,3 +1931,20 @@ pub fn run_drain_failure_expiry(
 pub fn scheduler_destructive_child(spec: &str) -> ! {
     physical_b::family57_58::child_entry(spec)
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+#[path = "accept_m4_lifecycle_prefix.rs"]
+mod lifecycle_prefix;
+
+/// Consume the continuation from run_drain_failure_expiry.
+///
+/// Executes scheduler-owners-joined and exactly the first three lifecycle
+/// cases. Returns with family-58-restore-does-not-recover pending.
+/// Keeps the same runtime and replacement Launch. Does not finish a ledger
+/// or emit a phase/overall completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_owners_binding_drift_readiness(
+    continuation: SchedulerContinuation,
+) -> Result<SchedulerContinuation> {
+    lifecycle_prefix::run(continuation)
+}
