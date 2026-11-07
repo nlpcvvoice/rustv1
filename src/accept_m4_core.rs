@@ -354,6 +354,33 @@ pub struct Orchestration {
 }
 
 impl Orchestration {
+    #[cfg(all(test, feature = "scheduler-test-seam"))]
+    pub(crate) fn from_test_stream(
+        stream: TcpStream,
+        send_key: &[u8],
+        receive_key: &[u8],
+        budget: Duration,
+        transcript: &Path,
+    ) -> Result<Self> {
+        ensure!(
+            send_key.len() == 32
+                && receive_key.len() == 32
+                && send_key != receive_key
+                && !budget.is_zero(),
+            "invalid test orchestration configuration"
+        );
+        Ok(Self {
+            stream,
+            send_key: hmac::Key::new(hmac::HMAC_SHA256, send_key),
+            receive_key: hmac::Key::new(hmac::HMAC_SHA256, receive_key),
+            send_sequence: 0,
+            receive_sequence: 0,
+            budget,
+            usable: true,
+            transcript: private_file(transcript)?,
+        })
+    }
+
     pub async fn connect(loaded: &Loaded, transcript: &Path) -> Result<Self> {
         let port: u16 = std::env::var("RV1_ORCH_PORT")
             .context("RV1_ORCH_PORT required")?

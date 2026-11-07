@@ -15,6 +15,7 @@ use std::{
 const CHILD_TEST: &str =
     "acceptance_scheduler::lifecycle_prefix::tests::terminal_routes_child_process";
 const CHILD_ENV: &str = "RV1_M4_TERMINAL_ROUTE_TEST";
+const RESTORE_ENV: &str = "RV1_M4_RESTORE_ROUTE_TEST";
 
 fn limits() -> Limits {
     serde_json::from_value(json!({
@@ -50,6 +51,7 @@ impl TextTokenizer for Tokens {
 
 struct DriftBackend {
     drift: bool,
+    restores: Arc<std::sync::atomic::AtomicUsize>,
 }
 impl Backend for DriftBackend {
     fn forward(&mut self, batches: &[Vec<u32>]) -> std::result::Result<Vec<Vec<f32>>, Code> {
@@ -75,6 +77,8 @@ impl Backend for DriftBackend {
 
     fn restore_policy(&mut self) -> std::result::Result<(), Code> {
         self.drift = false;
+        self.restores
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
 }
@@ -83,7 +87,7 @@ fn service<T>(result: std::result::Result<T, Code>) -> Result<T> {
     result.map_err(|code| anyhow::anyhow!("production Service: {code:?}"))
 }
 
-async fn child_work(out: &Path) -> Result<()> {
+async fn child_work(out: &Path, check_restore: bool) -> Result<()> {
     let instance = format!("terminal-{}", core::random_label()?);
     let mut config = Config::production(64, 131072, 1024);
     config.batching = Some(BatchedExecution::default());
@@ -92,6 +96,8 @@ async fn child_work(out: &Path) -> Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let base = format!("http://{}", listener.local_addr()?);
     let listener = service(BoundedListener::new(listener, &config.transport))?;
+    let restores = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let backend_restores = restores.clone();
     let mut owner = service(Service::spawn(
         config,
         Arc::new(Tokens),
@@ -100,7 +106,12 @@ async fn child_work(out: &Path) -> Result<()> {
             tokens: vec![vec![100]],
             embeddings: vec![row()],
         },
-        || Ok(DriftBackend { drift: false }),
+        move || {
+            Ok(DriftBackend {
+                drift: false,
+                restores: backend_restores,
+            })
+        },
     ))?;
     let app = owner.app.clone();
     let router = app.router();
@@ -171,6 +182,45 @@ async fn child_work(out: &Path) -> Result<()> {
                 == observation,
             "health/refusal altered logical counter"
         );
+
+        if check_restore {
+            ensure!(
+                restores.load(std::sync::atomic::Ordering::SeqCst) == 1,
+                "drift trigger did not perform its automatic cleanup restore"
+            );
+            let restore_out = out.join("explicit-restore");
+            private_directory(&restore_out)?;
+            let probe = super::restart_prefix::restore_probe(
+                |name| {
+                    let app = &app;
+                    async move {
+                        let command = match name {
+                            "observe" => ControlCommand::Observe,
+                            "restore" => ControlCommand::Restore,
+                            _ => anyhow::bail!("unplanned restore harness control"),
+                        };
+                        Ok(serde_json::to_value(service(app.control(command).await)?)?)
+                    }
+                },
+                &http,
+                json!({
+                    "model": MODEL_ID,
+                    "input": ["valid"],
+                    "encoding_format": "float"
+                }),
+                &observation,
+                &restore_out,
+            )
+            .await?;
+            ensure!(
+                restores.load(std::sync::atomic::Ordering::SeqCst) == 2
+                    && probe["restore_observation"] == observation
+                    && probe["observation_after"] == observation
+                    && !app.is_ready(),
+                "explicit production restore was skipped or reopened the executor"
+            );
+            save_json(&restore_out.join("evidence.json"), &probe)?;
+        }
         Ok(())
     }
     .await;
@@ -225,7 +275,8 @@ fn terminal_routes_child_process() {
             .worker_threads(2)
             .enable_all()
             .build()?;
-        let result = runtime.block_on(child_work(&out));
+        let check_restore = std::env::var(RESTORE_ENV).as_deref() == Ok("1");
+        let result = runtime.block_on(child_work(&out, check_restore));
         std::mem::forget(runtime);
         result
     }));
@@ -248,8 +299,7 @@ fn terminal_routes_child_process() {
     std::process::exit(if success { 0 } else { 1 });
 }
 
-#[test]
-fn production_terminal_health_routes_in_reaped_child() {
+fn parent_routes_in_reaped_child(check_restore: bool) {
     let root = std::env::temp_dir().join(format!(
         "rv1-terminal-routes-{}-{}",
         std::process::id(),
@@ -266,6 +316,7 @@ fn production_terminal_health_routes_in_reaped_child() {
             .arg("--test-threads=1")
             .env_clear()
             .env(CHILD_ENV, &root)
+            .env(RESTORE_ENV, if check_restore { "1" } else { "0" })
             .stdin(Stdio::null())
             .stdout(Stdio::from(fs::File::create(root.join("stdout.log"))?))
             .stderr(Stdio::from(fs::File::create(root.join("stderr.log"))?))
@@ -345,4 +396,14 @@ fn connection_reconciliation_rejects_missing_extra_and_relabelled_owners() {
     let mut changed = completed.clone();
     changed["join_outcome"] = json!("panicked");
     assert!(check_connections("instance", &[completed], &[changed]).is_err());
+}
+
+#[test]
+fn production_terminal_health_routes_in_reaped_child() {
+    parent_routes_in_reaped_child(false);
+}
+
+#[test]
+fn production_restore_stays_poisoned_in_reaped_child() {
+    parent_routes_in_reaped_child(true);
 }

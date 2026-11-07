@@ -1179,3 +1179,6 @@ pub(super) fn run(continuation: SchedulerContinuation) -> Result<SchedulerContin
 #[cfg(test)]
 #[path = "accept_m4_lifecycle_prefix_tests.rs"]
 mod tests;
+
+#[path = "accept_m4_lifecycle_restart_prefix.rs"]
+pub(super) mod restart_prefix;

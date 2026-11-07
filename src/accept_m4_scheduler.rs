@@ -1948,3 +1948,23 @@ pub fn run_owners_binding_drift_readiness(
 ) -> Result<SchedulerContinuation> {
     lifecycle_prefix::run(continuation)
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+pub use lifecycle_prefix::restart_prefix::{PoisonExitContinuation, PoisonExitState};
+
+/// Consume run_owners_binding_drift_readiness's continuation.
+///
+/// Executes exactly:
+/// - family-58-restore-does-not-recover
+/// - family-58-authenticated-supervised-restart
+/// - family-58-old-process-exit
+///
+/// Returns with family-58-replacement-reattestation pending.
+/// Replacement launch remains unauthorized until the next segment.
+/// No phase or overall completion marker is emitted.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_restore_restart_exit(
+    continuation: SchedulerContinuation,
+) -> Result<PoisonExitContinuation> {
+    lifecycle_prefix::restart_prefix::run(continuation)
+}
