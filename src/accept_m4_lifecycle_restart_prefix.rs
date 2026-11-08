@@ -771,3 +771,6 @@ pub(crate) fn run(continuation: SchedulerContinuation) -> Result<PoisonExitConti
 #[cfg(test)]
 #[path = "accept_m4_lifecycle_restart_prefix_tests.rs"]
 mod tests;
+
+#[path = "accept_m4_lifecycle_reattestation.rs"]
+pub(crate) mod reattestation;

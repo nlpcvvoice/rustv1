@@ -1968,3 +1968,21 @@ pub fn run_restore_restart_exit(
 ) -> Result<PoisonExitContinuation> {
     lifecycle_prefix::restart_prefix::run(continuation)
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+pub use lifecycle_prefix::restart_prefix::reattestation::{
+    RecoveryReadyContinuation, RecoveryReadyState,
+};
+
+/// Execute exactly family-58-replacement-reattestation.
+///
+/// Consumes the poisoned-process exit continuation. Preserves the old
+/// historical poisoned observation and reconciliation cursor unchanged.
+///
+/// Returns with family-58-exact-recovery pending. No completion markers.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_replacement_reattestation(
+    continuation: PoisonExitContinuation,
+) -> Result<RecoveryReadyContinuation> {
+    lifecycle_prefix::restart_prefix::reattestation::run(continuation)
+}
