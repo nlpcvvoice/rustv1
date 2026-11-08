@@ -797,3 +797,6 @@ pub(crate) fn run(continuation: PoisonExitContinuation) -> Result<RecoveryReadyC
 #[cfg(test)]
 #[path = "accept_m4_lifecycle_reattestation_tests.rs"]
 mod tests;
+
+#[path = "accept_m4_lifecycle_exact_recovery.rs"]
+pub(crate) mod exact_recovery;

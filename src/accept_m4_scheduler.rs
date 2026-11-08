@@ -1986,3 +1986,22 @@ pub fn run_replacement_reattestation(
 ) -> Result<RecoveryReadyContinuation> {
     lifecycle_prefix::restart_prefix::reattestation::run(continuation)
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+pub use lifecycle_prefix::restart_prefix::reattestation::exact_recovery::{
+    ExactRecoveryContinuation, ExactRecoveryState,
+};
+
+/// Execute exactly family-58-exact-recovery.
+///
+/// Consumes the reattested replacement's fresh startup baseline.
+/// Keeps the exited scheduler's historical poisoned cursor unchanged.
+///
+/// Returns with final-authenticated-drain-and-exit pending.
+/// No phase-completion or overall-completion marker is written.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_exact_recovery(
+    continuation: RecoveryReadyContinuation,
+) -> Result<ExactRecoveryContinuation> {
+    lifecycle_prefix::restart_prefix::reattestation::exact_recovery::run(continuation)
+}
