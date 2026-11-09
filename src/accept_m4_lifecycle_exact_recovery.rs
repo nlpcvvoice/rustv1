@@ -765,3 +765,6 @@ pub(crate) fn run(continuation: RecoveryReadyContinuation) -> Result<ExactRecove
 #[cfg(test)]
 #[path = "accept_m4_lifecycle_exact_recovery_tests.rs"]
 mod tests;
+
+#[path = "accept_m4_lifecycle_final_drain.rs"]
+pub(crate) mod final_drain;

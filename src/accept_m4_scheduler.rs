@@ -2005,3 +2005,18 @@ pub fn run_exact_recovery(
 ) -> Result<ExactRecoveryContinuation> {
     lifecycle_prefix::restart_prefix::reattestation::exact_recovery::run(continuation)
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+pub use lifecycle_prefix::restart_prefix::reattestation::exact_recovery::final_drain::{
+    FinalDrainContinuation, FinalDrainState,
+};
+
+/// Execute exactly final-authenticated-drain-and-exit.
+///
+/// Preserves both historical launch cursors. Returns with
+/// final-artifact-and-manifest-reconciliation pending.
+/// Does not finish any phase or claim overall acceptance.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn run_final_drain(continuation: ExactRecoveryContinuation) -> Result<FinalDrainContinuation> {
+    lifecycle_prefix::restart_prefix::reattestation::exact_recovery::final_drain::run(continuation)
+}
