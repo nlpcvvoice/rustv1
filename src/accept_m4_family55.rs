@@ -1269,7 +1269,12 @@ mod tests {
         let result: Result<()> = async {
             for case in [SATURATION, EXPIRY, WAIT] {
                 for probe in probes(case)? {
-                    let evidence = local(limits(), &root.join(probe.name()), probe).await?;
+                    let probe_out = root.join(probe.name());
+                    let evidence = local(limits(), &probe_out, probe).await?;
+                    super::super::saved_local::mutation_checks(
+                        &probe_out,
+                        &evidence,
+                    )?;
                     ensure!(
                         evidence["cleanup"]["owner_thread_joined"] == true
                             && evidence["cleanup"]["http_server_joined"] == true

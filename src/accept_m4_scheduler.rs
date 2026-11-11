@@ -1835,6 +1835,9 @@ mod physical_b {
     pub(super) mod family57_58 {
         include!("accept_m4_family57_58.rs");
     }
+    pub(super) mod saved_local {
+        include!("accept_m4_saved_local.rs");
+    }
 
     #[cfg(test)]
     mod tests {
@@ -2019,4 +2022,36 @@ pub use lifecycle_prefix::restart_prefix::reattestation::exact_recovery::final_d
 #[cfg(feature = "scheduler-test-seam")]
 pub fn run_final_drain(continuation: ExactRecoveryContinuation) -> Result<FinalDrainContinuation> {
     lifecycle_prefix::restart_prefix::reattestation::exact_recovery::final_drain::run(continuation)
+}
+
+/// Offline partial-reconciliation continuation.
+///
+/// Contains credentials indirectly through final_drain.
+/// Do not derive Debug or Serialize.
+///
+/// The active ledger still has exactly
+/// final-artifact-and-manifest-reconciliation pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct LocalArtifactsContinuation {
+    pub final_drain: FinalDrainContinuation,
+    pub local_reconciliation: Value,
+}
+
+/// Consume FinalDrainContinuation and validate the saved local probe files.
+///
+/// This is not completion of the final reconciliation case. It makes no
+/// post-exit control call, appends no ledger row, and writes no completion
+/// marker.
+///
+/// Subsequent reconciliation must recheck the returned inventory against
+/// the retained ledger commitments before publishing completion.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_local_artifacts(
+    continuation: FinalDrainContinuation,
+) -> Result<LocalArtifactsContinuation> {
+    let local_reconciliation = physical_b::saved_local::reconcile(&continuation.state)?;
+    Ok(LocalArtifactsContinuation {
+        final_drain: continuation,
+        local_reconciliation,
+    })
 }

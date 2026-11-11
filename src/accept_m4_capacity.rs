@@ -1225,8 +1225,14 @@ mod capacity_tests {
             for case in [PADDED_CASE, ATTENTION_CASE, FIFO_CASE] {
                 let mut probes = Vec::new();
                 for spec in case_specs(case)? {
+                    let probe_out = root.join(spec.name);
                     let evidence =
-                        local_capacity(test_limits(), &root.join(spec.name), spec).await?;
+                        local_capacity(test_limits(), &probe_out, spec).await?;
+                    save_json(&probe_out.join("evidence.json"), &evidence)?;
+                    super::super::saved_local::mutation_checks(
+                        &probe_out,
+                        &evidence,
+                    )?;
                     ensure!(
                         evidence["cleanup"]["owner_thread_joined"] == true
                             && evidence["cleanup"]["http_server_joined"] == true
