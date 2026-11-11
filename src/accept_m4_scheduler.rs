@@ -2055,3 +2055,37 @@ pub fn reconcile_local_artifacts(
         local_reconciliation,
     })
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+mod saved_imports {
+    include!("accept_m4_saved_imports.rs");
+}
+
+/// Offline partial-reconciliation continuation.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// The active ledger still has precisely
+/// final-artifact-and-manifest-reconciliation pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct ImportedArtifactsContinuation {
+    pub local_artifacts: LocalArtifactsContinuation,
+    pub import_reconciliation: Value,
+}
+
+/// Consume the local-artifact boundary and reconcile imported phase sources.
+///
+/// Makes no network call or process observation, appends no ledger row,
+/// and writes no completion marker.
+///
+/// This is not complete cross-phase or final-artifact reconciliation.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_imported_artifacts(
+    continuation: LocalArtifactsContinuation,
+) -> Result<ImportedArtifactsContinuation> {
+    let import_reconciliation = saved_imports::reconcile(&continuation)?;
+    Ok(ImportedArtifactsContinuation {
+        local_artifacts: continuation,
+        import_reconciliation,
+    })
+}
