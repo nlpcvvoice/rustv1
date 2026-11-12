@@ -2125,3 +2125,37 @@ pub fn reconcile_initial_launch_artifacts(
         initial_launch_reconciliation,
     })
 }
+
+/// Offline recovery-launch lineage boundary.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// This is not complete artifact reconciliation. In particular, the recovery
+/// HTTP intervals, destructive-child files, complete historical poisoned
+/// artifact set, and combined output coverage remain to be reconciled.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct RecoveryLaunchLineageContinuation {
+    pub initial_artifacts: InitialLaunchArtifactsContinuation,
+    pub recovery_lineage_reconciliation: Value,
+}
+
+/// Consume the initial-launch boundary without live operations.
+///
+/// Authenticates saved orchestration frames and checks restart -> recovery
+/// launch -> final drain lineage, recovery startup artifacts, and historical
+/// cursor preservation.
+///
+/// No ledger append, owner join, process observation, or completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_recovery_launch_lineage(
+    continuation: InitialLaunchArtifactsContinuation,
+) -> Result<RecoveryLaunchLineageContinuation> {
+    let recovery_lineage_reconciliation =
+        lifecycle_prefix::restart_prefix::reattestation::exact_recovery::
+            final_drain::saved_lineage::reconcile(&continuation)?;
+
+    Ok(RecoveryLaunchLineageContinuation {
+        initial_artifacts: continuation,
+        recovery_lineage_reconciliation,
+    })
+}

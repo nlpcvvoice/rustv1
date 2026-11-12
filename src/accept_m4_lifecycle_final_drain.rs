@@ -710,3 +710,8 @@ pub(crate) fn run(continuation: ExactRecoveryContinuation) -> Result<FinalDrainC
 #[cfg(test)]
 #[path = "accept_m4_lifecycle_final_drain_tests.rs"]
 mod tests;
+
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) mod saved_lineage {
+    include!("accept_m4_saved_recovery_lineage.rs");
+}
