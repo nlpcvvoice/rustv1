@@ -628,7 +628,7 @@ fn decode_hex(value: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
-fn verify_transcript(bytes: &[u8], policy_value: &Value) -> Result<Vec<Value>> {
+pub(super) fn verify_transcript(bytes: &[u8], policy_value: &Value) -> Result<Vec<Value>> {
     let records = core::jsonl(bytes)?;
     let mut sent = 0u64;
     let mut received = 0u64;

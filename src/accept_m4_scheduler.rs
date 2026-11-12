@@ -2089,3 +2089,39 @@ pub fn reconcile_imported_artifacts(
         import_reconciliation,
     })
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+mod saved_initial {
+    include!("accept_m4_saved_initial.rs");
+}
+
+/// Offline initial-launch and HTTP-marker reconciliation boundary.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// The HTTP marker is semantically reconciled; its discarded original
+/// producer-returned digest is explicitly not represented as recovered.
+///
+/// The final reconciliation case remains pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct InitialLaunchArtifactsContinuation {
+    pub imported_artifacts: ImportedArtifactsContinuation,
+    pub initial_launch_reconciliation: Value,
+}
+
+/// Consume the imported-artifact boundary without performing live operations.
+///
+/// Revalidates preceding local/import reconciliation, checks the initial
+/// external launch and its saved exit history, and checks the HTTP marker.
+///
+/// Does not append a ledger row or publish a completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_initial_launch_artifacts(
+    continuation: ImportedArtifactsContinuation,
+) -> Result<InitialLaunchArtifactsContinuation> {
+    let initial_launch_reconciliation = saved_initial::reconcile(&continuation)?;
+    Ok(InitialLaunchArtifactsContinuation {
+        imported_artifacts: continuation,
+        initial_launch_reconciliation,
+    })
+}
