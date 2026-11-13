@@ -814,3 +814,8 @@ mod tests {
         assert!(unique_nonce(&frames, "not-a-digest").is_err());
     }
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) mod saved_http {
+    include!("accept_m4_saved_recovery_http.rs");
+}

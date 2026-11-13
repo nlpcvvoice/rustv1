@@ -2159,3 +2159,36 @@ pub fn reconcile_recovery_launch_lineage(
         recovery_lineage_reconciliation,
     })
 }
+
+/// Offline recovery HTTP/artifact reconciliation boundary.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// Exact directory coverage is limited to recovery reattestation, exact
+/// recovery, and final drain. Combined acceptance-output coverage and the
+/// final reconciliation ledger case remain incomplete.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct RecoveryHttpArtifactsContinuation {
+    pub recovery_lineage: RecoveryLaunchLineageContinuation,
+    pub recovery_http_reconciliation: Value,
+}
+
+/// Consume the saved recovery-lineage boundary without live operations.
+///
+/// Reconciles all 44 serialized recovery HTTP/executor intervals and exact
+/// coverage of the three recovery-related output subtrees.
+///
+/// Appends no ledger row and publishes no phase/overall completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_recovery_http_artifacts(
+    continuation: RecoveryLaunchLineageContinuation,
+) -> Result<RecoveryHttpArtifactsContinuation> {
+    let recovery_http_reconciliation =
+        lifecycle_prefix::restart_prefix::reattestation::exact_recovery::
+            final_drain::saved_lineage::saved_http::reconcile(&continuation)?;
+
+    Ok(RecoveryHttpArtifactsContinuation {
+        recovery_lineage: continuation,
+        recovery_http_reconciliation,
+    })
+}
