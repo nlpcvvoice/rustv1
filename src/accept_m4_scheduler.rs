@@ -2192,3 +2192,36 @@ pub fn reconcile_recovery_http_artifacts(
         recovery_http_reconciliation,
     })
 }
+
+/// Offline destructive-child and saved-owner reconciliation boundary.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// Original unjoined closures remain unjoined. Parent reap is checked as
+/// saved historical containment evidence, not performed again.
+///
+/// The final reconciliation case remains pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct DestructiveOwnersArtifactsContinuation {
+    pub recovery_http: RecoveryHttpArtifactsContinuation,
+    pub destructive_owners_reconciliation: Value,
+}
+
+/// Consume RecoveryHttpArtifactsContinuation without live operations.
+///
+/// Reconciles destructive-child files and saved parent-reap evidence, then
+/// reconstructs the complete saved scheduler owner inventory.
+///
+/// Appends no ledger row and writes no phase or overall completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_destructive_children_and_owners(
+    continuation: RecoveryHttpArtifactsContinuation,
+) -> Result<DestructiveOwnersArtifactsContinuation> {
+    let destructive_owners_reconciliation =
+        lifecycle_prefix::saved_owners::reconcile(&continuation)?;
+
+    Ok(DestructiveOwnersArtifactsContinuation {
+        recovery_http: continuation,
+        destructive_owners_reconciliation,
+    })
+}

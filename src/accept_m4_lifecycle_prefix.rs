@@ -1182,3 +1182,8 @@ mod tests;
 
 #[path = "accept_m4_lifecycle_restart_prefix.rs"]
 pub(super) mod restart_prefix;
+
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) mod saved_owners {
+    include!("accept_m4_saved_owners.rs");
+}

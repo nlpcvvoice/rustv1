@@ -1535,6 +1535,12 @@ mod tests {
                     "child changed parent-live reconciliation state"
                 );
                 let child = child?;
+                crate::acceptance_scheduler::lifecycle_prefix::saved_owners::child_mutation_checks(
+                    &out,
+                    case,
+                    &child,
+                    &limits_value(),
+                )?;
                 ensure!(
                     child["exit"]["child_process_reaped"] == true
                         && child["exit"]["pid"] != std::process::id()
