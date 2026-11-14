@@ -2225,3 +2225,36 @@ pub fn reconcile_destructive_children_and_owners(
         destructive_owners_reconciliation,
     })
 }
+
+/// Offline historical poison lifecycle artifact boundary.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// The five poison/restore/restart/exit subtrees have exact coverage.
+/// Scheduler launch/startup/coalescing coverage remains a later prerequisite.
+/// The final reconciliation ledger case remains pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct PoisonedLaunchArtifactsContinuation {
+    pub destructive_owners: DestructiveOwnersArtifactsContinuation,
+    pub poisoned_launch_reconciliation: Value,
+}
+
+/// Consume the destructive-child/owner boundary without live operations.
+///
+/// Preserves historical poisoned observations and unjoined-owner semantics.
+/// Reconciles saved HTTP responses, original lifecycle evidence, saved
+/// restart/exit sidecars, and exact coverage of the five poison subtrees.
+///
+/// Appends no ledger row and publishes no completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_poisoned_launch_artifacts(
+    continuation: DestructiveOwnersArtifactsContinuation,
+) -> Result<PoisonedLaunchArtifactsContinuation> {
+    let poisoned_launch_reconciliation =
+        lifecycle_prefix::saved_owners::saved_poison::reconcile(&continuation)?;
+
+    Ok(PoisonedLaunchArtifactsContinuation {
+        destructive_owners: continuation,
+        poisoned_launch_reconciliation,
+    })
+}

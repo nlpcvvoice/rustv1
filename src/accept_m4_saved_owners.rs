@@ -800,10 +800,29 @@ fn bound_case(
     let evidence: Value = serde_json::from_slice(&bytes)?;
     ensure!(
         evidence["case_id"] == row["case_id"]
-            && evidence["policy_sha256"] == loaded.policy_sha256
-            && evidence["driver_binary_sha256"] == loaded.artifacts["accept_m4"].sha256,
-        "owner source policy/driver/case binding"
+            && evidence["policy_sha256"] == loaded.policy_sha256,
+        "owner source policy/case binding"
     );
+
+    // Historical family-53 evidence has no driver_binary_sha256 field.
+    // Its bytes are bound by the original ledger commitment; the running
+    // driver is separately checked by Loaded::recheck().
+    //
+    // Do not add a field to the historical artifact or represent a current
+    // executable hash as a missing producer commitment.
+    if row["case_id"] == "family-53-live-cross-request-coalescing" {
+        ensure!(
+            evidence["schema"] == "rustv1.accept_m4_live_coalescing.v1"
+                && evidence.get("driver_binary_sha256").is_none(),
+            "historical family-53 producer schema changed"
+        );
+    } else {
+        ensure!(
+            evidence["driver_binary_sha256"]
+                == loaded.artifacts["accept_m4"].sha256,
+            "owner source driver binding"
+        );
+    }
     Ok((evidence, digest))
 }
 
@@ -1363,4 +1382,9 @@ mod tests {
             panic!("owner coverage failed; retained {}: {error:#}", root.display())
         });
     }
+}
+
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) mod saved_poison {
+    include!("accept_m4_saved_poison.rs");
 }
