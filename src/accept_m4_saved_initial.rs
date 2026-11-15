@@ -973,3 +973,13 @@ mod tests {
 pub(crate) mod saved_independent {
     include!("accept_m4_saved_independent.rs");
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) mod saved_scheduler {
+    include!("accept_m4_saved_scheduler.rs");
+}
+
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) mod saved_coverage {
+    include!("accept_m4_saved_coverage.rs");
+}

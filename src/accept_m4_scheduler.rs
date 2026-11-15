@@ -2292,3 +2292,65 @@ pub fn reconcile_independent_artifacts(
         independent_reconciliation,
     })
 }
+
+/// Offline scheduler launch/coalescing/manifest/transcript boundary.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+/// The final reconciliation ledger case remains pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct SchedulerArtifactsContinuation {
+    pub independent_artifacts: IndependentArtifactsContinuation,
+    pub scheduler_reconciliation: Value,
+}
+
+/// Consume IndependentArtifactsContinuation without live operations.
+///
+/// Checks scheduler launch/startup, the saved consumed-binding lifecycle
+/// case, every coalescing wave and artifact, the complete scheduler manifest,
+/// and the remaining authenticated transcript positions.
+///
+/// No ledger append or completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_scheduler_artifacts(
+    continuation: IndependentArtifactsContinuation,
+) -> Result<SchedulerArtifactsContinuation> {
+    let scheduler_reconciliation = saved_initial::saved_scheduler::reconcile(&continuation)?;
+    Ok(SchedulerArtifactsContinuation {
+        independent_artifacts: continuation,
+        scheduler_reconciliation,
+    })
+}
+
+/// All artifact prerequisites, whole-transcript semantics, exact combined
+/// output coverage, and closing stability checks have been reconciled.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// This is a pre-append boundary. The retained ledger still has exactly
+/// final-artifact-and-manifest-reconciliation pending.
+///
+/// Later closeout must validate this boundary before extending the ledger,
+/// and must account explicitly for each newly written closeout artifact.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct OutputCoverageContinuation {
+    pub scheduler_artifacts: SchedulerArtifactsContinuation,
+    pub output_coverage_reconciliation: Value,
+}
+
+/// Consume the scheduler-artifact boundary without live operations.
+///
+/// Combines all nine preceding inventories, requires agreement on overlaps,
+/// checks the exact file/directory tree, and repeats offline validation,
+/// policy/input checks, external launch-file checks, and closing stability.
+///
+/// Appends no ledger row and writes no phase or overall completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_output_coverage(
+    continuation: SchedulerArtifactsContinuation,
+) -> Result<OutputCoverageContinuation> {
+    let output_coverage_reconciliation = saved_initial::saved_coverage::reconcile(&continuation)?;
+    Ok(OutputCoverageContinuation {
+        scheduler_artifacts: continuation,
+        output_coverage_reconciliation,
+    })
+}
