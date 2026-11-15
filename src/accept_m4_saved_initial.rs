@@ -968,3 +968,8 @@ mod tests {
         assert!(safe_relative("http/../evidence.json").is_err());
     }
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) mod saved_independent {
+    include!("accept_m4_saved_independent.rs");
+}

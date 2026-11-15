@@ -2258,3 +2258,37 @@ pub fn reconcile_poisoned_launch_artifacts(
         poisoned_launch_reconciliation,
     })
 }
+
+/// Offline independent-mode artifact and complete manifest boundary.
+///
+/// Contains credentials indirectly. Do not derive Debug or Serialize.
+///
+/// Exact coverage includes the independent subtree. Individual independent
+/// HTTP connection-task joins were not retained by the historical producer
+/// and are not claimed by this continuation.
+///
+/// The final reconciliation ledger case remains pending.
+#[cfg(feature = "scheduler-test-seam")]
+pub struct IndependentArtifactsContinuation {
+    pub poisoned_launch: PoisonedLaunchArtifactsContinuation,
+    pub independent_reconciliation: Value,
+}
+
+/// Consume the poison-artifact boundary without live operations.
+///
+/// Reconciles independent startup, every mapped request/response, every
+/// independent physical forward, the saved owner join, diagnostic completion
+/// log consistency, exact subtree coverage, and closing byte stability.
+///
+/// Appends no ledger row and publishes no completion marker.
+#[cfg(feature = "scheduler-test-seam")]
+pub fn reconcile_independent_artifacts(
+    continuation: PoisonedLaunchArtifactsContinuation,
+) -> Result<IndependentArtifactsContinuation> {
+    let independent_reconciliation = saved_initial::saved_independent::reconcile(&continuation)?;
+
+    Ok(IndependentArtifactsContinuation {
+        poisoned_launch: continuation,
+        independent_reconciliation,
+    })
+}

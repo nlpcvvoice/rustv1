@@ -1944,3 +1944,18 @@ mod tests {
         assert!(base_address("http://127.0.0.1:9700/?x=1").is_err());
     }
 }
+
+/// Offline reuse of the original independent forward_serving validator.
+///
+/// This performs no execution, control exchange, process observation, or join.
+/// Kept feature-gated so the ordinary coordinator interface is unchanged.
+#[cfg(feature = "scheduler-test-seam")]
+pub(crate) fn reconcile_saved_serving_pairs(
+    records: &[Value],
+    next: u64,
+    tokens: &[Vec<u32>],
+    hashes: &[String],
+    loaded: &Loaded,
+) -> Result<Vec<Value>> {
+    serving_pairs(records, next, tokens, hashes, loaded)
+}

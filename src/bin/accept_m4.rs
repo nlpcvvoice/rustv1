@@ -5,6 +5,8 @@
 //!
 //! Neither command reports overall M4 acceptance.
 
+#![recursion_limit = "256"]
+
 #[path = "../accept_m4_contract.rs"]
 mod contract;
 
