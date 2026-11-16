@@ -35,6 +35,10 @@ pub mod acceptance_scheduler;
 #[path = "../accept_m4_full.rs"]
 mod acceptance_full;
 
+#[cfg(all(feature = "scheduler-test-seam", not(feature = "cuda")))]
+#[path = "../accept_m4_cpu_dispatch.rs"]
+mod acceptance_cpu;
+
 use anyhow::{bail, Result};
 use std::path::Path;
 
@@ -82,6 +86,10 @@ fn main() {
     #[cfg(feature = "scheduler-test-seam")]
     if args.get(1).map(String::as_str) == Some("acceptance-full") {
         std::process::exit(acceptance_full::main(&args));
+    }
+    #[cfg(all(feature = "scheduler-test-seam", not(feature = "cuda")))]
+    if args.get(1).map(String::as_str) == Some("cpu-harness") {
+        std::process::exit(acceptance_cpu::main(&args));
     }
     let phase = if args.get(1).map(String::as_str) == Some("acceptance-http") {
         "http_reconciliation"

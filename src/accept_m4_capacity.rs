@@ -1258,3 +1258,30 @@ mod capacity_tests {
         });
     }
 }
+
+#[cfg(not(feature = "cuda"))]
+pub(super) async fn cpu_case(
+    loaded: &Loaded,
+    out: &Path,
+    case: &str,
+) -> Result<Value> {
+    private_directory(out)?;
+    let relation = envelope_relationship()?;
+    let mut probes = Vec::new();
+    let mut receipts = Vec::new();
+    for spec in case_specs(case)? {
+        let probe_out = out.join(spec.name);
+        let limits = serde_json::from_value(loaded.policy["limits"].clone())?;
+        let evidence = local_capacity(limits, &probe_out, spec).await?;
+        save_json(&probe_out.join("evidence.json"), &evidence)?;
+        receipts.push(
+            super::cpu::local_receipt(&probe_out, spec.name, &evidence).await?,
+        );
+        probes.push(evidence);
+    }
+    Ok(json!({
+        "envelope_relationship": relation,
+        "summary": boundary_summary(case, &probes)?,
+        "probes": receipts
+    }))
+}

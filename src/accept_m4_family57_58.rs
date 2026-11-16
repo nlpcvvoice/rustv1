@@ -1605,3 +1605,26 @@ mod tests {
         });
     }
 }
+
+#[cfg(not(feature = "cuda"))]
+pub(super) async fn cpu_case(
+    loaded: &Loaded,
+    out: &Path,
+    case: &str,
+) -> Result<Value> {
+    private_directory(out)?;
+    let child = spawn_probe(case, out, loaded.policy["limits"].clone()).await?;
+    let files =
+        crate::acceptance_scheduler::lifecycle_prefix::saved_owners::cpu_child_files(
+            out,
+            case,
+            &child,
+            &loaded.policy["limits"],
+            &loaded.artifacts["accept_m4"].sha256,
+        )?;
+    Ok(json!({
+        "child": child,
+        "output_sha256": files,
+        "external_live_server_isolation_checked": false
+    }))
+}

@@ -1233,6 +1233,19 @@ pub(crate) fn reconcile(
 
 /// Exercise the same offline child validator on actual, already-reaped
 /// disposable harness output. This does not synthesize execution evidence.
+#[cfg(not(feature = "cuda"))]
+pub(crate) fn cpu_child_files(
+    root: &Path,
+    case: &str,
+    child: &Value,
+    limits: &Value,
+    binary: &str,
+) -> Result<BTreeMap<String, String>> {
+    let mut files = Files::new(root)?;
+    child_bundle(&mut files, case, child, limits, binary, &[])?;
+    files.stable()?;
+    Ok(files.hashes)
+}
 #[cfg(test)]
 pub(crate) fn child_mutation_checks(
     root: &Path,

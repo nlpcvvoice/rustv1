@@ -1839,6 +1839,11 @@ mod physical_b {
         include!("accept_m4_saved_local.rs");
     }
 
+    #[cfg(not(feature = "cuda"))]
+    pub(super) mod cpu {
+        include!("accept_m4_cpu.rs");
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -2374,4 +2379,19 @@ pub use saved_initial::saved_coverage::closeout::AcceptanceCompletion;
 #[cfg(all(feature = "scheduler-test-seam", feature = "cuda"))]
 pub fn finish_acceptance(continuation: OutputCoverageContinuation) -> Result<AcceptanceCompletion> {
     saved_initial::saved_coverage::closeout::run(continuation)
+}
+
+/// Execute the policy-loaded CPU projection, never production acceptance.
+///
+/// Requires a finalized policy binding this exact CPU executable.
+/// Does not construct a CoreState or fabricate production continuations.
+#[cfg(all(feature = "scheduler-test-seam", not(feature = "cuda")))]
+pub fn run_cpu_harness(
+    model: &Path,
+    input: &Path,
+    input_sha256: &str,
+    policy_path: &Path,
+    out: &Path,
+) -> Result<Value> {
+    physical_b::cpu::run(model, input, input_sha256, policy_path, out)
 }

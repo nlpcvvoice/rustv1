@@ -1314,3 +1314,22 @@ mod tests {
         });
     }
 }
+
+#[cfg(not(feature = "cuda"))]
+pub(super) async fn cpu_case(
+    loaded: &Loaded,
+    out: &Path,
+    case: &str,
+) -> Result<Value> {
+    private_directory(out)?;
+    let mut receipts = Vec::new();
+    for probe in probes(case)? {
+        let probe_out = out.join(probe.name());
+        let limits = serde_json::from_value(loaded.policy["limits"].clone())?;
+        let evidence = local(limits, &probe_out, probe).await?;
+        receipts.push(
+            super::cpu::local_receipt(&probe_out, probe.name(), &evidence).await?,
+        );
+    }
+    Ok(json!({"probes": receipts}))
+}
