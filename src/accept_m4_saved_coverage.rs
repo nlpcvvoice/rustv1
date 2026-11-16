@@ -440,3 +440,9 @@ mod tests {
         });
     }
 }
+
+#[cfg(feature = "scheduler-test-seam")]
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) mod closeout {
+    include!("accept_m4_closeout.rs");
+}

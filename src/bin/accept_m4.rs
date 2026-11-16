@@ -3,7 +3,12 @@
 //! prepass MODEL_DIR PREPASS_JSON PREPASS_SHA256 OUT_DIR
 //! acceptance-http POLICY_JSON BASE_URL CONTROL_SOCKET OUT_DIR HANDOFF_JSON
 //!
-//! Neither command reports overall M4 acceptance.
+//! With cuda and scheduler-test-seam:
+//! acceptance-full MODEL_DIR PREPASS_JSON PREPASS_SHA256 POLICY_JSON BASE_URL OUT_DIR
+//!
+//! Only acceptance-full can report overall M4 acceptance.
+//! Numerical prepass evidence is consumed from finalized policy bindings;
+//! acceptance-full does not rerun or manufacture the numerical prepass.
 
 #![recursion_limit = "256"]
 
@@ -25,6 +30,10 @@ pub mod acceptance_core;
 
 #[path = "../accept_m4_scheduler.rs"]
 pub mod acceptance_scheduler;
+
+#[cfg(feature = "scheduler-test-seam")]
+#[path = "../accept_m4_full.rs"]
+mod acceptance_full;
 
 use anyhow::{bail, Result};
 use std::path::Path;
@@ -69,6 +78,10 @@ fn main() {
             std::process::exit(2);
         }
         acceptance_scheduler::scheduler_destructive_child(&args[2]);
+    }
+    #[cfg(feature = "scheduler-test-seam")]
+    if args.get(1).map(String::as_str) == Some("acceptance-full") {
+        std::process::exit(acceptance_full::main(&args));
     }
     let phase = if args.get(1).map(String::as_str) == Some("acceptance-http") {
         "http_reconciliation"

@@ -2354,3 +2354,24 @@ pub fn reconcile_output_coverage(
         output_coverage_reconciliation,
     })
 }
+
+#[cfg(all(feature = "scheduler-test-seam", feature = "cuda"))]
+pub use saved_initial::saved_coverage::closeout::AcceptanceCompletion;
+
+/// Consume the final pre-append reconciliation boundary.
+///
+/// In order:
+/// 1. Revalidate prerequisites and append the final reconciliation case.
+/// 2. Write the scheduler marker.
+/// 3. Write the lifecycle marker.
+/// 4. Invoke the actual global Ledger::finish().
+/// 5. Write and read back the overall marker.
+///
+/// Makes no control/HTTP call, process observation, owner join, child reap,
+/// or additional supervisor exchange.
+///
+/// Unavailable in CPU-only builds. No exclusions are accepted.
+#[cfg(all(feature = "scheduler-test-seam", feature = "cuda"))]
+pub fn finish_acceptance(continuation: OutputCoverageContinuation) -> Result<AcceptanceCompletion> {
+    saved_initial::saved_coverage::closeout::run(continuation)
+}
