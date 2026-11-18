@@ -4,5 +4,5 @@
   "max_len": 1024,
   "max_tokens": 32768,
   "max_seqs": 32,
-  "wait_us": 0
+  "wait_us": 1000
 }
