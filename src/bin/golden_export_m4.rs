@@ -152,18 +152,16 @@ mod cuda {
 
     fn unresolved(value: &Value) -> bool {
         match value {
-            Value::String(s) => [
-                "RUNTIME",
-                "FILLED_BY_INTEGRATOR",
-                "<SHA256:",
-                "PENDING_ROUNDTRIP",
-            ]
-            .iter()
-            .any(|needle| s.contains(needle)),
+            Value::String(s) => {
+                s == "RUNTIME"
+                    || ["FILLED_BY_INTEGRATOR", "<SHA256:", "PENDING_ROUNDTRIP"]
+                        .iter()
+                        .any(|needle| s.contains(needle))
+            }
             Value::Array(values) => values.iter().any(unresolved),
             Value::Object(values) => values
                 .iter()
-                .any(|(key, value)| key.contains("RUNTIME") || unresolved(value)),
+                .any(|(key, value)| key == "RUNTIME" || unresolved(value)),
             _ => false,
         }
     }
