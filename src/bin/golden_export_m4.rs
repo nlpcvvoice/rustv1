@@ -83,7 +83,7 @@ mod cuda {
     };
 
     const WIDTH: usize = 2048;
-    const MAX_JSON: usize = 8 * 1024 * 1024;
+    const MAX_JSON: usize = 32 * 1024 * 1024;
 
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
