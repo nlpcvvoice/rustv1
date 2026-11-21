@@ -172,22 +172,15 @@ fn file_sha256(path: &Path) -> Result<String, Code> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
+mod audit_placeholders {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/audit_placeholders.rs"
+    ));
+}
+
 fn placeholder(value: &Value) -> bool {
-    match value {
-        Value::String(s) => [
-            "RUNTIME",
-            "FILLED_BY_INTEGRATOR",
-            "<SHA256:",
-            "PENDING_ROUNDTRIP",
-        ]
-        .iter()
-        .any(|needle| s.contains(needle)),
-        Value::Array(values) => values.iter().any(placeholder),
-        Value::Object(values) => values
-            .iter()
-            .any(|(key, value)| key.contains("RUNTIME") || placeholder(value)),
-        _ => false,
-    }
+    audit_placeholders::unresolved(value)
 }
 
 fn artifact_path(root: &Path, relative: &str) -> Result<PathBuf, Code> {

@@ -150,20 +150,15 @@ mod cuda {
         !s.is_empty() && s.len() <= 128 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
     }
 
+    mod audit_placeholders {
+        include!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/audit_placeholders.rs"
+        ));
+    }
+
     fn unresolved(value: &Value) -> bool {
-        match value {
-            Value::String(s) => {
-                s == "RUNTIME"
-                    || ["FILLED_BY_INTEGRATOR", "<SHA256:", "PENDING_ROUNDTRIP"]
-                        .iter()
-                        .any(|needle| s.contains(needle))
-            }
-            Value::Array(values) => values.iter().any(unresolved),
-            Value::Object(values) => values
-                .iter()
-                .any(|(key, value)| key == "RUNTIME" || unresolved(value)),
-            _ => false,
-        }
+        audit_placeholders::unresolved(value)
     }
 
     fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
