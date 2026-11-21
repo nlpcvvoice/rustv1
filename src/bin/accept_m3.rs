@@ -317,17 +317,15 @@ pub struct Bundle {
     pub fixture_goldens: Vec<Vec<f32>>,
 }
 
+mod audit_placeholders {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/audit_placeholders.rs"
+    ));
+}
+
 fn has_placeholder(v: &Value) -> bool {
-    match v {
-        Value::String(s) => {
-            s.contains("FILLED_BY_INTEGRATOR")
-                || s.contains("<SHA256:")
-                || s.contains("PENDING_ROUNDTRIP")
-        }
-        Value::Array(a) => a.iter().any(has_placeholder),
-        Value::Object(o) => o.values().any(has_placeholder),
-        _ => false,
-    }
+    audit_placeholders::unresolved(v)
 }
 
 fn artifact_path(root: &Path, relative: &str) -> Result<PathBuf> {

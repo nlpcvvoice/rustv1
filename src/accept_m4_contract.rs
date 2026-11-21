@@ -119,22 +119,15 @@ pub fn value(path: &Path) -> Result<Value> {
     Ok(serde_json::from_slice(&bounded(path, JSON_LIMIT)?)?)
 }
 
+mod audit_placeholders {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/audit_placeholders.rs"
+    ));
+}
+
 pub fn unresolved(value: &Value) -> bool {
-    match value {
-        Value::String(text) => [
-            "RUNTIME",
-            "FILLED_BY_INTEGRATOR",
-            "<SHA256:",
-            "PENDING_ROUNDTRIP",
-        ]
-        .iter()
-        .any(|needle| text.contains(needle)),
-        Value::Array(values) => values.iter().any(unresolved),
-        Value::Object(values) => values
-            .iter()
-            .any(|(key, value)| key.contains("RUNTIME") || unresolved(value)),
-        _ => false,
-    }
+    audit_placeholders::unresolved(value)
 }
 
 pub fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {

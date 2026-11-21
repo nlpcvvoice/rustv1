@@ -314,7 +314,7 @@ fn acceptance_contract() -> Value {
             "execution_policy", "ordered_token_digests", "valid_lengths",
             "B", "S", "physical_row"
         ],
-        "runtime_placeholder_rejection": "recursive_exact_or_embedded_RUNTIME",
+        "runtime_placeholder_rejection": "recursive_exact_RUNTIME_and_reserved_value_substrings",
         "pending_required_cases_must_be_empty": true,
         "exceptions": []
     })
@@ -383,7 +383,7 @@ fn check_policy_header(p: &Value) -> Result<()> {
             "samples",
         ],
     )?;
-    // This rejects embedded RUNTIME as well as the earlier placeholder forms.
+    // Reject exact RUNTIME keys/values and reserved value substrings.
     ensure!(!unresolved(p), "unresolved policy");
     ensure!(
         p["schema"] == "rustv1.acceptance_policy.v3"
