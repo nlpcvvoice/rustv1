@@ -1,0 +1,48 @@
+rc=0
+0
+NO_WORKSPACE_TABLE
+/:
+total 30
+drwxr-xr-x  1 root root   160 Nov 23 03:12 .
+drwxr-xr-x  1 root root   160 Nov 23 03:12 ..
+-rw-r--r--  1 root root 17294 Mar 10  2025 NGC-DL-CONTAINER-LICENSE
+drwxr-xr-x  1 root root    60 Nov 23 03:12 __modal
+lrwxrwxrwx  1 root root     7 Jan 26  2025 bin -> usr/bin
+drwxr-xr-x  1 root root     6 Apr 18  2022 boot
+-rw-r--r--  1 root root  4332 Mar 10  2025 cuda-keyring_1.1-1_all.deb
+drwxr-xr-x  6 root root   360 Nov 23 03:12 dev
+drwxr-xr-x  1 root root    19 Nov 21 01:31 etc
+drwxr-xr-x  1 root root     6 Apr 18  2022 home
+lrwxrwxrwx  1 root root     7 Jan 26  2025 lib -> usr/lib
+lrwxrwxrwx  1 root root     9 Jan 26  2025 lib32 -> usr/lib32
+lrwxrwxrwx  1 root root     9 Jan 26  2025 lib64 -> usr/lib64
+lrwxrwxrwx  1 root root    10 Jan 26  2025 libx32 -> usr/libx32
+drwxr-xr-x  1 root root     6 Jan 26  2025 media
+drwxr-xr-x  1 root root     6 Jan 26  2025 mnt
+drwxr-xr-x  1 root root    20 Mar 10  2025 opt
+drwxr-xr-x  1 root root   140 Nov 23 03:12 pkg
+dr-xr-xr-x 11 root root     0 Nov 23 03:12 proc
+drwxr-xr-x  1 root root    60 Nov 23 03:12 root
+drwxr-xr-x  1 root root    32 Nov 23 03:12 run
+lrwxrwxrwx  1 root root     8 Jan 26  2025 sbin -> usr/sbin
+drwxr-xr-x  1 root root     6 Jan 26  2025 srv
+drwxr-xr-x 12 root root     0 Nov 23 03:12 sys
+drwxrwxrwx  1 root root    43 Nov 23 03:12 tmp
+drwxr-xr-x  1 root root    60 Nov 23 03:12 usr
+drwxr-xr-x  1 root root    41 Jan 26  2025 var
+drwxr-xr-x  1 root root    60 Nov 23 03:12 work
+
+/work:
+total 21
+drwxr-xr-x 1 root root    60 Nov 23 03:12 .
+drwxr-xr-x 1 root root   160 Nov 23 03:12 ..
+-rw-rw-r-- 1 root root 10660 Nov 22 19:30 amend_cuda_inventory.py
+drwxr-xr-x 1 root root    92 Nov 22 19:30 cratesrc
+drwxr-xr-x 1 root root    17 Nov 22 19:30 evidence
+drwxr-xr-x 1 root root   380 Nov 23 03:12 rustv1
+-rw-rw-r-- 1 root root  9268 Nov 22 19:30 verify_cuda_regions_v3.py
+PARENT_CARGO_ABSENT
+ROOT_CARGO_CONFIG_ABSENT
+CARGO_HOME_CONFIG_ABSENT
+CARGO_HOME_CONFIG_LEGACY_ABSENT
+CARGO_HOME=

@@ -1,0 +1,87 @@
+diff --git a/src/accept_m4_contract.rs b/src/accept_m4_contract.rs
+index ec6c5a8..c5c46cc 100644
+--- a/src/accept_m4_contract.rs
++++ b/src/accept_m4_contract.rs
+@@ -119,22 +119,15 @@ pub fn value(path: &Path) -> Result<Value> {
+     Ok(serde_json::from_slice(&bounded(path, JSON_LIMIT)?)?)
+ }
+ 
++mod audit_placeholders {
++    include!(concat!(
++        env!("CARGO_MANIFEST_DIR"),
++        "/src/audit_placeholders.rs"
++    ));
++}
++
+ pub fn unresolved(value: &Value) -> bool {
+-    match value {
+-        Value::String(text) => [
+-            "RUNTIME",
+-            "FILLED_BY_INTEGRATOR",
+-            "<SHA256:",
+-            "PENDING_ROUNDTRIP",
+-        ]
+-        .iter()
+-        .any(|needle| text.contains(needle)),
+-        Value::Array(values) => values.iter().any(unresolved),
+-        Value::Object(values) => values
+-            .iter()
+-            .any(|(key, value)| key.contains("RUNTIME") || unresolved(value)),
+-        _ => false,
+-    }
++    audit_placeholders::unresolved(value)
+ }
+ 
+ pub fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+diff --git a/src/accept_m4_policy.rs b/src/accept_m4_policy.rs
+index 4f3ce93..98f1351 100644
+--- a/src/accept_m4_policy.rs
++++ b/src/accept_m4_policy.rs
+@@ -314,7 +314,7 @@ fn acceptance_contract() -> Value {
+             "execution_policy", "ordered_token_digests", "valid_lengths",
+             "B", "S", "physical_row"
+         ],
+-        "runtime_placeholder_rejection": "recursive_exact_or_embedded_RUNTIME",
++        "runtime_placeholder_rejection": "recursive_exact_RUNTIME_and_reserved_value_substrings",
+         "pending_required_cases_must_be_empty": true,
+         "exceptions": []
+     })
+@@ -383,7 +383,7 @@ fn check_policy_header(p: &Value) -> Result<()> {
+             "samples",
+         ],
+     )?;
+-    // This rejects embedded RUNTIME as well as the earlier placeholder forms.
++    // Reject exact RUNTIME keys/values and reserved value substrings.
+     ensure!(!unresolved(p), "unresolved policy");
+     ensure!(
+         p["schema"] == "rustv1.acceptance_policy.v3"
+diff --git a/src/bin/accept_m3.rs b/src/bin/accept_m3.rs
+index dae7e26..5ff294d 100644
+--- a/src/bin/accept_m3.rs
++++ b/src/bin/accept_m3.rs
+@@ -317,17 +317,15 @@ pub struct Bundle {
+     pub fixture_goldens: Vec<Vec<f32>>,
+ }
+ 
++mod audit_placeholders {
++    include!(concat!(
++        env!("CARGO_MANIFEST_DIR"),
++        "/src/audit_placeholders.rs"
++    ));
++}
++
+ fn has_placeholder(v: &Value) -> bool {
+-    match v {
+-        Value::String(s) => {
+-            s.contains("FILLED_BY_INTEGRATOR")
+-                || s.contains("<SHA256:")
+-                || s.contains("PENDING_ROUNDTRIP")
+-        }
+-        Value::Array(a) => a.iter().any(has_placeholder),
+-        Value::Object(o) => o.values().any(has_placeholder),
+-        _ => false,
+-    }
++    audit_placeholders::unresolved(v)
+ }
+ 
+ fn artifact_path(root: &Path, relative: &str) -> Result<PathBuf> {

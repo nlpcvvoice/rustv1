@@ -1,0 +1,2116 @@
+{
+  "all_pass": true,
+  "anchor_semantics": "literal substring, all anchors required",
+  "argv": [
+    "tmp/audit-v3-tools/verify_cuda_regions_v3.py",
+    "--repo",
+    "NVIDIA/github/rustv1",
+    "--crate-root",
+    "tmp/v3_evidence/cratesrc",
+    "--inventory",
+    "tmp/v3amend-local/audit-amendment-final/inventory.json",
+    "--out",
+    "tmp/v3amend-local/audit-amendment-final/region_report.json"
+  ],
+  "crate_root": "/work/cratesrc",
+  "file_count": 24,
+  "files": [
+    {
+      "actual_sha256": "bc2bd5fe3702bfccb49d64af07dc4197013d6617c720643cd2a14b718f4134e2",
+      "classification": "inherited",
+      "declared_path": "candle-core-0.9.2/src/cuda_backend/mod.rs",
+      "expected_sha256": "bc2bd5fe3702bfccb49d64af07dc4197013d6617c720643cd2a14b718f4134e2",
+      "id": "candle_cuda",
+      "line_count": 2682,
+      "normalized_path": "candle-core-0.9.2/src/cuda_backend/mod.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_config"
+            }
+          ],
+          "first_line": 1343,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 1433,
+          "pass": true,
+          "symbol": "gemm_config"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn matmul"
+            }
+          ],
+          "first_line": 2188,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 2242,
+          "pass": true,
+          "symbol": "CudaStorage::matmul"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "MM_F16_REDUCED_PRECISION"
+            }
+          ],
+          "first_line": 2473,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 2474,
+          "pass": true,
+          "symbol": "MM_F16_REDUCED_PRECISION"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "MM_BF16_REDUCED_PRECISION"
+            }
+          ],
+          "first_line": 2475,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 2476,
+          "pass": true,
+          "symbol": "MM_BF16_REDUCED_PRECISION"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "MM_F32_REDUCED_PRECISION"
+            }
+          ],
+          "first_line": 2477,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 2478,
+          "pass": true,
+          "symbol": "MM_F32_REDUCED_PRECISION"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_reduced_precision_f32"
+            }
+          ],
+          "first_line": 2482,
+          "in_bounds": true,
+          "index": 5,
+          "last_line": 2484,
+          "pass": true,
+          "symbol": "gemm_reduced_precision_f32"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn set_gemm_reduced_precision_f32"
+            }
+          ],
+          "first_line": 2488,
+          "in_bounds": true,
+          "index": 6,
+          "last_line": 2490,
+          "pass": true,
+          "symbol": "set_gemm_reduced_precision_f32"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_reduced_precision_f16"
+            }
+          ],
+          "first_line": 2494,
+          "in_bounds": true,
+          "index": 7,
+          "last_line": 2496,
+          "pass": true,
+          "symbol": "gemm_reduced_precision_f16"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn set_gemm_reduced_precision_f16"
+            }
+          ],
+          "first_line": 2500,
+          "in_bounds": true,
+          "index": 8,
+          "last_line": 2502,
+          "pass": true,
+          "symbol": "set_gemm_reduced_precision_f16"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_reduced_precision_bf16"
+            }
+          ],
+          "first_line": 2506,
+          "in_bounds": true,
+          "index": 9,
+          "last_line": 2508,
+          "pass": true,
+          "symbol": "gemm_reduced_precision_bf16"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn set_gemm_reduced_precision_bf16"
+            }
+          ],
+          "first_line": 2512,
+          "in_bounds": true,
+          "index": 10,
+          "last_line": 2514,
+          "pass": true,
+          "symbol": "set_gemm_reduced_precision_bf16"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_strided_batched_f32"
+            }
+          ],
+          "first_line": 2516,
+          "in_bounds": true,
+          "index": 11,
+          "last_line": 2564,
+          "pass": true,
+          "symbol": "gemm_strided_batched_f32"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_strided_batched_f16"
+            }
+          ],
+          "first_line": 2566,
+          "in_bounds": true,
+          "index": 12,
+          "last_line": 2623,
+          "pass": true,
+          "symbol": "gemm_strided_batched_f16"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_strided_batched_bf16"
+            }
+          ],
+          "first_line": 2625,
+          "in_bounds": true,
+          "index": 13,
+          "last_line": 2682,
+          "pass": true,
+          "symbol": "gemm_strided_batched_bf16"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn to_dtype"
+            }
+          ],
+          "first_line": 1507,
+          "in_bounds": true,
+          "index": 14,
+          "last_line": 1646,
+          "pass": true,
+          "symbol": "CudaStorage::to_dtype"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn kernel_name"
+            }
+          ],
+          "first_line": 97,
+          "in_bounds": true,
+          "index": 15,
+          "last_line": 100,
+          "pass": true,
+          "symbol": "kernel_name"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "40f4bb9512f9001a983802129b6cfee16381a24b7876f13ba02cd49b6dfe1925",
+      "classification": "inherited",
+      "declared_path": "candle-core-0.9.2/src/cuda_backend/device.rs",
+      "expected_sha256": "40f4bb9512f9001a983802129b6cfee16381a24b7876f13ba02cd49b6dfe1925",
+      "id": "candle_device",
+      "line_count": 710,
+      "normalized_path": "candle-core-0.9.2/src/cuda_backend/device.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "struct CudaDevice"
+            }
+          ],
+          "first_line": 33,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 43,
+          "pass": true,
+          "symbol": "CudaDevice"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn cublas_handle"
+            }
+          ],
+          "first_line": 247,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 249,
+          "pass": true,
+          "symbol": "CudaDevice::cublas_handle"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn new_with_stream"
+            }
+          ],
+          "first_line": 253,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 271,
+          "pass": true,
+          "symbol": "CudaDevice::new_with_stream"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn new"
+            }
+          ],
+          "first_line": 277,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 295,
+          "pass": true,
+          "symbol": "BackendDevice::new"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn compile"
+            }
+          ],
+          "first_line": 176,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 196,
+          "pass": true,
+          "symbol": "CudaDevice::compile"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn get_or_load_custom_func"
+            }
+          ],
+          "first_line": 202,
+          "in_bounds": true,
+          "index": 5,
+          "last_line": 225,
+          "pass": true,
+          "symbol": "CudaDevice::get_or_load_custom_func"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn get_or_load_func"
+            }
+          ],
+          "first_line": 227,
+          "in_bounds": true,
+          "index": 6,
+          "last_line": 245,
+          "pass": true,
+          "symbol": "CudaDevice::get_or_load_func"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn builder"
+            }
+          ],
+          "first_line": 148,
+          "in_bounds": true,
+          "index": 7,
+          "last_line": 150,
+          "pass": true,
+          "symbol": "CudaFunc::builder"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "25b95a8deecffa87d55325d9ae258b9552778a7eb24a653b7c1438340aa21487",
+      "classification": "inherited",
+      "declared_path": "candle-core-0.9.2/src/tensor.rs",
+      "expected_sha256": "25b95a8deecffa87d55325d9ae258b9552778a7eb24a653b7c1438340aa21487",
+      "id": "candle_tensor",
+      "line_count": 3116,
+      "normalized_path": "candle-core-0.9.2/src/tensor.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn from_storage"
+            }
+          ],
+          "first_line": 159,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 177,
+          "pass": true,
+          "symbol": "from_storage"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn matmul"
+            }
+          ],
+          "first_line": 1495,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 1538,
+          "pass": true,
+          "symbol": "Tensor::matmul"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn broadcast_matmul"
+            }
+          ],
+          "first_line": 1545,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 1560,
+          "pass": true,
+          "symbol": "Tensor::broadcast_matmul"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn to_dtype"
+            }
+          ],
+          "first_line": 2453,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 2462,
+          "pass": true,
+          "symbol": "Tensor::to_dtype"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn t("
+            }
+          ],
+          "first_line": 2250,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 2261,
+          "pass": true,
+          "symbol": "Tensor::t"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn transpose"
+            }
+          ],
+          "first_line": 2265,
+          "in_bounds": true,
+          "index": 5,
+          "last_line": 2282,
+          "pass": true,
+          "symbol": "Tensor::transpose"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn contiguous"
+            }
+          ],
+          "first_line": 2466,
+          "in_bounds": true,
+          "index": 6,
+          "last_line": 2477,
+          "pass": true,
+          "symbol": "Tensor::contiguous"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn reshape"
+            }
+          ],
+          "first_line": 2523,
+          "in_bounds": true,
+          "index": 7,
+          "last_line": 2551,
+          "pass": true,
+          "symbol": "Tensor::reshape"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "6241271357ee152f0244e47053f40de811832fca89e8aece6420bbc1b5c485c4",
+      "classification": "inherited",
+      "declared_path": "candle-core-0.9.2/src/storage.rs",
+      "expected_sha256": "6241271357ee152f0244e47053f40de811832fca89e8aece6420bbc1b5c485c4",
+      "id": "candle_storage",
+      "line_count": 849,
+      "normalized_path": "candle-core-0.9.2/src/storage.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn same_device"
+            }
+          ],
+          "first_line": 47,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 65,
+          "pass": true,
+          "symbol": "Storage::same_device"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn same_dtype"
+            }
+          ],
+          "first_line": 67,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 75,
+          "pass": true,
+          "symbol": "Storage::same_dtype"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn matmul"
+            }
+          ],
+          "first_line": 769,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 798,
+          "pass": true,
+          "symbol": "Storage::matmul"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn apply_op1"
+            }
+          ],
+          "first_line": 205,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 220,
+          "pass": true,
+          "symbol": "Storage::apply_op1"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn to_dtype"
+            }
+          ],
+          "first_line": 188,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 203,
+          "pass": true,
+          "symbol": "Storage::to_dtype"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "ede0422de76c4f99199ebd011f7792f54f6404dbfb47a454eac54c0f453493cf",
+      "classification": "inherited",
+      "declared_path": "cudarc-0.19.10/src/cublas/safe/gemm.rs",
+      "expected_sha256": "ede0422de76c4f99199ebd011f7792f54f6404dbfb47a454eac54c0f453493cf",
+      "id": "cudarc_safe_gemm",
+      "line_count": 635,
+      "normalized_path": "cudarc-0.19.10/src/cublas/safe/gemm.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "struct GemmConfig"
+            }
+          ],
+          "first_line": 8,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 19,
+          "pass": true,
+          "symbol": "GemmConfig"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "struct StridedBatchedConfig"
+            }
+          ],
+          "first_line": 23,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 29,
+          "pass": true,
+          "symbol": "StridedBatchedConfig"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "trait Gemm"
+            }
+          ],
+          "first_line": 32,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 60,
+          "pass": true,
+          "symbol": "Gemm"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm"
+            }
+          ],
+          "first_line": 64,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 97,
+          "pass": true,
+          "symbol": "Gemm<f16>::gemm"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_strided_batched"
+            }
+          ],
+          "first_line": 98,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 139,
+          "pass": true,
+          "symbol": "Gemm<f16>::gemm_strided_batched"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm"
+            }
+          ],
+          "first_line": 144,
+          "in_bounds": true,
+          "index": 5,
+          "last_line": 181,
+          "pass": true,
+          "symbol": "Gemm<bf16>::gemm"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_strided_batched"
+            }
+          ],
+          "first_line": 182,
+          "in_bounds": true,
+          "index": 6,
+          "last_line": 223,
+          "pass": true,
+          "symbol": "Gemm<bf16>::gemm_strided_batched"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm"
+            }
+          ],
+          "first_line": 227,
+          "in_bounds": true,
+          "index": 7,
+          "last_line": 253,
+          "pass": true,
+          "symbol": "Gemm<f32>::gemm"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_strided_batched"
+            }
+          ],
+          "first_line": 255,
+          "in_bounds": true,
+          "index": 8,
+          "last_line": 285,
+          "pass": true,
+          "symbol": "Gemm<f32>::gemm_strided_batched"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "5842b11f0cef6e87a2de852d1c57756ca3e19c4082b71d5bd580bcbcede1d843",
+      "classification": "inherited",
+      "declared_path": "cudarc-0.19.10/src/cublas/safe/mod.rs",
+      "expected_sha256": "5842b11f0cef6e87a2de852d1c57756ca3e19c4082b71d5bd580bcbcede1d843",
+      "id": "cudarc_safe",
+      "line_count": 126,
+      "normalized_path": "cudarc-0.19.10/src/cublas/safe/mod.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn new"
+            }
+          ],
+          "first_line": 35,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 42,
+          "pass": true,
+          "symbol": "CudaBlas::new"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn handle"
+            }
+          ],
+          "first_line": 45,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 47,
+          "pass": true,
+          "symbol": "CudaBlas::handle"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn set_stream"
+            }
+          ],
+          "first_line": 55,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 58,
+          "pass": true,
+          "symbol": "CudaBlas::set_stream"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn set_pointer_mode"
+            }
+          ],
+          "first_line": 67,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 75,
+          "pass": true,
+          "symbol": "CudaBlas::set_pointer_mode"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn get_pointer_mode"
+            }
+          ],
+          "first_line": 79,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 85,
+          "pass": true,
+          "symbol": "CudaBlas::get_pointer_mode"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "01467682707577979cf669b8493cda19465fc34f8653e74265abf08062c1efa1",
+      "classification": "inherited",
+      "declared_path": "cudarc-0.19.10/src/cublas/result.rs",
+      "expected_sha256": "01467682707577979cf669b8493cda19465fc34f8653e74265abf08062c1efa1",
+      "id": "cudarc_result",
+      "line_count": 516,
+      "normalized_path": "cudarc-0.19.10/src/cublas/result.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn create_handle"
+            }
+          ],
+          "first_line": 29,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 35,
+          "pass": true,
+          "symbol": "create_handle"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn set_stream"
+            }
+          ],
+          "first_line": 53,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 58,
+          "pass": true,
+          "symbol": "set_stream"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_ex"
+            }
+          ],
+          "first_line": 373,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 416,
+          "pass": true,
+          "symbol": "gemm_ex"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn gemm_strided_batched_ex"
+            }
+          ],
+          "first_line": 427,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 478,
+          "pass": true,
+          "symbol": "gemm_strided_batched_ex"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn sgemm("
+            }
+          ],
+          "first_line": 174,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 194,
+          "pass": true,
+          "symbol": "sgemm"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn sgemm_strided_batched"
+            }
+          ],
+          "first_line": 301,
+          "in_bounds": true,
+          "index": 5,
+          "last_line": 326,
+          "pass": true,
+          "symbol": "sgemm_strided_batched"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "feef119470d453fe0409a9ed124539d168aa1f07edc8b5434f984a542e15eb5b",
+      "classification": "inherited",
+      "declared_path": "cudarc-0.19.10/src/cublas/safe/grouped_gemm.rs",
+      "expected_sha256": "feef119470d453fe0409a9ed124539d168aa1f07edc8b5434f984a542e15eb5b",
+      "id": "cudarc_safe_grouped_gemm",
+      "line_count": 401,
+      "normalized_path": "cudarc-0.19.10/src/cublas/safe/grouped_gemm.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "trait GroupedGemmDtype"
+            },
+            {
+              "present": true,
+              "text": "impl GroupedGemmDtype for half::f16"
+            },
+            {
+              "present": true,
+              "text": "impl GroupedGemmDtype for half::bf16"
+            }
+          ],
+          "first_line": 12,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 43,
+          "pass": true,
+          "symbol": "GroupedGemmDtype and F16/BF16 implementations"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "struct GroupedGemmConfig"
+            }
+          ],
+          "first_line": 45,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 100,
+          "pass": true,
+          "symbol": "GroupedGemmConfig"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "trait GroupedGemm"
+            }
+          ],
+          "first_line": 102,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 122,
+          "pass": true,
+          "symbol": "GroupedGemm"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn grouped_gemm"
+            }
+          ],
+          "first_line": 124,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 148,
+          "pass": true,
+          "symbol": "grouped_gemm older-CUDA branch"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn grouped_gemm"
+            }
+          ],
+          "first_line": 150,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 233,
+          "pass": true,
+          "symbol": "grouped_gemm supported-CUDA branch"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "9c60662c0e2c890777a09b2bbea34da8bef716bd247b8775da0a61fe4263068d",
+      "classification": "inherited",
+      "declared_path": "candle-nn-0.9.2/src/ops.rs",
+      "expected_sha256": "9c60662c0e2c890777a09b2bbea34da8bef716bd247b8775da0a61fe4263068d",
+      "id": "candle_nn_ops",
+      "line_count": 1276,
+      "normalized_path": "candle-nn-0.9.2/src/ops.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn softmax"
+            }
+          ],
+          "first_line": 22,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 29,
+          "pass": true,
+          "symbol": "softmax"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn cpu_fwd"
+            }
+          ],
+          "first_line": 288,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 326,
+          "pass": true,
+          "symbol": "SoftmaxLastDim::cpu_fwd"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn cuda_fwd"
+            }
+          ],
+          "first_line": 328,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 383,
+          "pass": true,
+          "symbol": "SoftmaxLastDim::cuda_fwd"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn softmax_last_dim"
+            }
+          ],
+          "first_line": 429,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 431,
+          "pass": true,
+          "symbol": "softmax_last_dim"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "c7827f685ef90affe4cefee1d133e9acdbd2489125e6f47f233f62e289a9c658",
+      "classification": "inherited",
+      "declared_path": "candle-nn-0.9.2/src/linear.rs",
+      "expected_sha256": "c7827f685ef90affe4cefee1d133e9acdbd2489125e6f47f233f62e289a9c658",
+      "id": "candle_nn_linear",
+      "line_count": 114,
+      "normalized_path": "candle-nn-0.9.2/src/linear.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn new"
+            }
+          ],
+          "first_line": 29,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 31,
+          "pass": true,
+          "symbol": "Linear::new"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn forward"
+            }
+          ],
+          "first_line": 43,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 78,
+          "pass": true,
+          "symbol": "Linear::forward"
+        }
+      ],
+      "root": "crate",
+      "sha256_match": true
+    },
+    {
+      "actual_sha256": "a2e29333acd3424b1c5a16f17e335994cea46cd54facbba54916da307a026719",
+      "classification": "inherited",
+      "declared_path": "rustv1/src/precision.rs",
+      "expected_sha256": "a2e29333acd3424b1c5a16f17e335994cea46cd54facbba54916da307a026719",
+      "id": "repo_precision",
+      "line_count": 688,
+      "normalized_path": "src/precision.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn single_norm"
+            }
+          ],
+          "first_line": 35,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 37,
+          "pass": true,
+          "symbol": "PrecisionProfile::single_norm"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn single_activation"
+            }
+          ],
+          "first_line": 39,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 41,
+          "pass": true,
+          "symbol": "PrecisionProfile::single_activation"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn wide_qk"
+            }
+          ],
+          "first_line": 43,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 45,
+          "pass": true,
+          "symbol": "PrecisionProfile::wide_qk"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn wide_pv"
+            }
+          ],
+          "first_line": 47,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 49,
+          "pass": true,
+          "symbol": "PrecisionProfile::wide_pv"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn rms"
+            }
+          ],
+          "first_line": 52,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 76,
+          "pass": true,
+          "symbol": "rms"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn silu_mul"
+            }
+          ],
+          "first_line": 78,
+          "in_bounds": true,
+          "index": 5,
+          "last_line": 90,
+          "pass": true,
+          "symbol": "silu_mul"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn attention"
+            }
+          ],
+          "first_line": 96,
+          "in_bounds": true,
+          "index": 6,
+          "last_line": 123,
+          "pass": true,
+          "symbol": "attention"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "55d58a4ea4086f2f4c59934a43b8ba0b27e24952d9c97fe4df7ecf9c64431ca7",
+      "classification": "inherited",
+      "declared_path": "rustv1/src/cuda_math.rs",
+      "expected_sha256": "55d58a4ea4086f2f4c59934a43b8ba0b27e24952d9c97fe4df7ecf9c64431ca7",
+      "id": "repo_cuda_math",
+      "line_count": 160,
+      "normalized_path": "src/cuda_math.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "static PIN_ACTIVE"
+            }
+          ],
+          "first_line": 16,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 18,
+          "pass": true,
+          "symbol": "PIN_ACTIVE"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn read"
+            }
+          ],
+          "first_line": 28,
+          "in_bounds": true,
+          "index": 1,
+          "last_line": 34,
+          "pass": true,
+          "symbol": "Settings::read"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn all_disabled"
+            }
+          ],
+          "first_line": 36,
+          "in_bounds": true,
+          "index": 2,
+          "last_line": 38,
+          "pass": true,
+          "symbol": "Settings::all_disabled"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "struct MathModePin"
+            }
+          ],
+          "first_line": 59,
+          "in_bounds": true,
+          "index": 3,
+          "last_line": 65,
+          "pass": true,
+          "symbol": "MathModePin"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn pin"
+            }
+          ],
+          "first_line": 68,
+          "in_bounds": true,
+          "index": 4,
+          "last_line": 100,
+          "pass": true,
+          "symbol": "MathModePin::pin"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn check"
+            }
+          ],
+          "first_line": 102,
+          "in_bounds": true,
+          "index": 5,
+          "last_line": 151,
+          "pass": true,
+          "symbol": "MathModePin::check"
+        },
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn drop"
+            }
+          ],
+          "first_line": 155,
+          "in_bounds": true,
+          "index": 6,
+          "last_line": 159,
+          "pass": true,
+          "symbol": "MathModePin::drop"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "9e75bd1e141502c4ac4d1deac26db4e637829747466880e6552e9340b71e3594",
+      "classification": "renewed",
+      "declared_path": "model.rs",
+      "expected_sha256": "9e75bd1e141502c4ac4d1deac26db4e637829747466880e6552e9340b71e3594",
+      "id": "repo_model",
+      "line_count": 1794,
+      "normalized_path": "src/model.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "struct BatchedExecution"
+            },
+            {
+              "present": true,
+              "text": "fn validate_engine"
+            },
+            {
+              "present": true,
+              "text": "fn fits"
+            },
+            {
+              "present": true,
+              "text": "struct ExecutionRow"
+            },
+            {
+              "present": true,
+              "text": "fn semantic_config_check"
+            },
+            {
+              "present": true,
+              "text": "fn weight_files"
+            },
+            {
+              "present": true,
+              "text": "fn theta"
+            },
+            {
+              "present": true,
+              "text": "fn yarn_params"
+            },
+            {
+              "present": true,
+              "text": "fn expected_manifest"
+            },
+            {
+              "present": true,
+              "text": "fn validate_manifest"
+            },
+            {
+              "present": true,
+              "text": "fn linear3"
+            },
+            {
+              "present": true,
+              "text": "fn no_bias"
+            },
+            {
+              "present": true,
+              "text": "fn build_rope_tables"
+            },
+            {
+              "present": true,
+              "text": "struct Model"
+            },
+            {
+              "present": true,
+              "text": "fn load"
+            },
+            {
+              "present": true,
+              "text": "fn with_precision"
+            },
+            {
+              "present": true,
+              "text": "fn rope"
+            },
+            {
+              "present": true,
+              "text": "fn repeat_kv"
+            },
+            {
+              "present": true,
+              "text": "fn run_decoder"
+            },
+            {
+              "present": true,
+              "text": "fn run_decoder_padded"
+            },
+            {
+              "present": true,
+              "text": "fn pooled_mean"
+            },
+            {
+              "present": true,
+              "text": "fn forward("
+            },
+            {
+              "present": true,
+              "text": "struct IndependentExecutor"
+            },
+            {
+              "present": true,
+              "text": "fn load_batched_with_attestation"
+            },
+            {
+              "present": true,
+              "text": "fn load_configured"
+            },
+            {
+              "present": true,
+              "text": "fn record"
+            },
+            {
+              "present": true,
+              "text": "fn validate_sequences"
+            },
+            {
+              "present": true,
+              "text": "fn forward_serving"
+            },
+            {
+              "present": true,
+              "text": "fn forward_batch("
+            },
+            {
+              "present": true,
+              "text": "fn forward_batch_validated"
+            },
+            {
+              "present": true,
+              "text": "fn forward_validated"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 1794,
+          "pass": true,
+          "symbol": "whole-file model and executor renewal"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "bc4648ad9f7acd195257b552a91520c7b31e73c06a3a3b7a17fd1c0ccafde2f5",
+      "classification": "renewed",
+      "declared_path": "m2_route.rs",
+      "expected_sha256": "bc4648ad9f7acd195257b552a91520c7b31e73c06a3a3b7a17fd1c0ccafde2f5",
+      "id": "repo_m2_route",
+      "line_count": 88,
+      "normalized_path": "src/m2_route.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn open("
+            },
+            {
+              "present": true,
+              "text": "fn open_with_attestation"
+            },
+            {
+              "present": true,
+              "text": "fn open_batched_with_attestation"
+            },
+            {
+              "present": true,
+              "text": "MathModePin::pin"
+            },
+            {
+              "present": true,
+              "text": "Device::new_cuda"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 88,
+          "pass": true,
+          "symbol": "whole-file route renewal"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "c5455bb5d134feae004a3a68cddacab889672f5f4b4f1f801b9c7a188c786693",
+      "classification": "new",
+      "declared_path": "http_serve.rs",
+      "expected_sha256": "c5455bb5d134feae004a3a68cddacab889672f5f4b4f1f801b9c7a188c786693",
+      "id": "repo_http_serve",
+      "line_count": 2027,
+      "normalized_path": "src/http_serve.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "feature = \"scheduler-test-seam\""
+            },
+            {
+              "present": true,
+              "text": "struct Config"
+            },
+            {
+              "present": true,
+              "text": "fn validate_tokens"
+            },
+            {
+              "present": true,
+              "text": "fn validate_output"
+            },
+            {
+              "present": true,
+              "text": "trait Backend"
+            },
+            {
+              "present": true,
+              "text": "struct Shared"
+            },
+            {
+              "present": true,
+              "text": "struct BackendHandle"
+            },
+            {
+              "present": true,
+              "text": "struct App"
+            },
+            {
+              "present": true,
+              "text": "struct Service"
+            },
+            {
+              "present": true,
+              "text": "fn worker_loop"
+            },
+            {
+              "present": true,
+              "text": "fn run_batch"
+            },
+            {
+              "present": true,
+              "text": "fn owner_control"
+            },
+            {
+              "present": true,
+              "text": "struct WorkerExit"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 2027,
+          "pass": true,
+          "symbol": "whole-file serving dispatch and ownership review"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "2344cf1b16222b61dc2a2648e2bb6b4722d0b3125fee7ca47a296e6cd954babe",
+      "classification": "new",
+      "declared_path": "src/yarn.rs",
+      "expected_sha256": "2344cf1b16222b61dc2a2648e2bb6b4722d0b3125fee7ca47a296e6cd954babe",
+      "id": "repo_yarn",
+      "line_count": 93,
+      "normalized_path": "src/yarn.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn standard_yarn_inv_freq"
+            },
+            {
+              "present": true,
+              "text": "fn llama4_attn_scale"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 93,
+          "pass": true,
+          "symbol": "whole-file reached YaRN helpers"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "7756694aafef4bd9893b5341b66fed1a494b78ce5a552f050b1867e438eb1c71",
+      "classification": "new",
+      "declared_path": "src/bin/serve_m3.rs",
+      "expected_sha256": "7756694aafef4bd9893b5341b66fed1a494b78ce5a552f050b1867e438eb1c71",
+      "id": "repo_serve_m3",
+      "line_count": 750,
+      "normalized_path": "src/bin/serve_m3.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "struct CudaBackend"
+            },
+            {
+              "present": true,
+              "text": "fn placeholder"
+            },
+            {
+              "present": true,
+              "text": "fn artifact_path"
+            },
+            {
+              "present": true,
+              "text": "fn load("
+            },
+            {
+              "present": true,
+              "text": "async fn run("
+            },
+            {
+              "present": true,
+              "text": "open_batched_with_attestation"
+            },
+            {
+              "present": true,
+              "text": "Service::spawn"
+            },
+            {
+              "present": true,
+              "text": "mod audit_placeholders"
+            },
+            {
+              "present": true,
+              "text": "\"/src/audit_placeholders.rs\""
+            },
+            {
+              "present": true,
+              "text": "audit_placeholders::unresolved(value)"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 750,
+          "pass": true,
+          "symbol": "whole-file production entry point and audit loader"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "37293a24d3f9aa0c1f653200f5086db377ffe08f3d77f7c72256b591c73c32ef",
+      "classification": "new",
+      "declared_path": "src/bin/golden_export_m4.rs",
+      "expected_sha256": "37293a24d3f9aa0c1f653200f5086db377ffe08f3d77f7c72256b591c73c32ef",
+      "id": "repo_golden_export_m4",
+      "line_count": 654,
+      "normalized_path": "src/bin/golden_export_m4.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn unresolved"
+            },
+            {
+              "present": true,
+              "text": "fn verify_audit"
+            },
+            {
+              "present": true,
+              "text": "fn validate_shape"
+            },
+            {
+              "present": true,
+              "text": "struct Export"
+            },
+            {
+              "present": true,
+              "text": "fn batch("
+            },
+            {
+              "present": true,
+              "text": "pub fn run("
+            },
+            {
+              "present": true,
+              "text": "open_batched_with_attestation"
+            },
+            {
+              "present": true,
+              "text": "mod audit_placeholders"
+            },
+            {
+              "present": true,
+              "text": "\"/src/audit_placeholders.rs\""
+            },
+            {
+              "present": true,
+              "text": "audit_placeholders::unresolved(value)"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 654,
+          "pass": true,
+          "symbol": "whole-file exporter audit gate and execution entry point"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "e0f228f6aba1d40204c65db6fc40cb924568a0b2198daffc3d7d01e04caa4174",
+      "classification": "binding",
+      "declared_path": "Cargo.toml",
+      "expected_sha256": "e0f228f6aba1d40204c65db6fc40cb924568a0b2198daffc3d7d01e04caa4174",
+      "id": "cargo_toml",
+      "line_count": 80,
+      "normalized_path": "Cargo.toml",
+      "pass": true,
+      "regions": [],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "0d394b762911d84e1ca3e324d423a8c7ba6bde4ea893173bf8d931b0b420bbb5",
+      "classification": "binding",
+      "declared_path": "Cargo.lock",
+      "expected_sha256": "0d394b762911d84e1ca3e324d423a8c7ba6bde4ea893173bf8d931b0b420bbb5",
+      "id": "cargo_lock",
+      "line_count": 2307,
+      "normalized_path": "Cargo.lock",
+      "pass": true,
+      "regions": [],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "f7756e6f5a43e2942a0ae809e99ac1dc4aba6d6507bafd983d092f2f6fb67d20",
+      "classification": "new",
+      "declared_path": "src/audit_placeholders.rs",
+      "expected_sha256": "f7756e6f5a43e2942a0ae809e99ac1dc4aba6d6507bafd983d092f2f6fb67d20",
+      "id": "repo_audit_placeholders",
+      "line_count": 56,
+      "normalized_path": "src/audit_placeholders.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "pub fn unresolved"
+            },
+            {
+              "present": true,
+              "text": "text == \"RUNTIME\""
+            },
+            {
+              "present": true,
+              "text": "key == \"RUNTIME\""
+            },
+            {
+              "present": true,
+              "text": "Value::Array"
+            },
+            {
+              "present": true,
+              "text": "Value::Object"
+            },
+            {
+              "present": true,
+              "text": "FILLED_BY_INTEGRATOR"
+            },
+            {
+              "present": true,
+              "text": "<SHA256:"
+            },
+            {
+              "present": true,
+              "text": "PENDING_ROUNDTRIP"
+            },
+            {
+              "present": true,
+              "text": "fn rejects_exact_sentinels_recursively"
+            },
+            {
+              "present": true,
+              "text": "fn allows_descriptions_and_audit_identifiers"
+            },
+            {
+              "present": true,
+              "text": "fn retains_reserved_value_substring_rejection"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 56,
+          "pass": true,
+          "symbol": "whole-file shared placeholder scanner and regression tests"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "fbe0c2cecd69a1e2b3a6dafed8c58302a817d2ab72fa1cf9f25d84a1ef0ea3db",
+      "classification": "new",
+      "declared_path": "src/bin/accept_m3.rs",
+      "expected_sha256": "fbe0c2cecd69a1e2b3a6dafed8c58302a817d2ab72fa1cf9f25d84a1ef0ea3db",
+      "id": "repo_accept_m3",
+      "line_count": 1511,
+      "normalized_path": "src/bin/accept_m3.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "fn has_placeholder"
+            },
+            {
+              "present": true,
+              "text": "pub fn load_bundle"
+            },
+            {
+              "present": true,
+              "text": "!has_placeholder(&policy_val)"
+            },
+            {
+              "present": true,
+              "text": "!has_placeholder(&audit)"
+            },
+            {
+              "present": true,
+              "text": "fn artifact_path"
+            },
+            {
+              "present": true,
+              "text": "fn required_path"
+            },
+            {
+              "present": true,
+              "text": "running executable hash mismatch"
+            },
+            {
+              "present": true,
+              "text": "mod audit_placeholders"
+            },
+            {
+              "present": true,
+              "text": "\"/src/audit_placeholders.rs\""
+            },
+            {
+              "present": true,
+              "text": "audit_placeholders::unresolved(v)"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 1511,
+          "pass": true,
+          "symbol": "whole-file legacy acceptance loader integration review"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "c51a0c18ab9836f5ed7ccab97aa2bed2b56dc3ae3dbd5018ab3dd2f561ae9522",
+      "classification": "new",
+      "declared_path": "src/accept_m4_contract.rs",
+      "expected_sha256": "c51a0c18ab9836f5ed7ccab97aa2bed2b56dc3ae3dbd5018ab3dd2f561ae9522",
+      "id": "repo_accept_m4_contract",
+      "line_count": 633,
+      "normalized_path": "src/accept_m4_contract.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "pub fn unresolved"
+            },
+            {
+              "present": true,
+              "text": "pub fn load("
+            },
+            {
+              "present": true,
+              "text": "fn load_candidates"
+            },
+            {
+              "present": true,
+              "text": "!unresolved(&input_value)"
+            },
+            {
+              "present": true,
+              "text": "!unresolved(&audit)"
+            },
+            {
+              "present": true,
+              "text": "active audit scope/bindings"
+            },
+            {
+              "present": true,
+              "text": "batch_export_provenance"
+            },
+            {
+              "present": true,
+              "text": "batch_export_manifest"
+            },
+            {
+              "present": true,
+              "text": "batch_shapes"
+            },
+            {
+              "present": true,
+              "text": "mod audit_placeholders"
+            },
+            {
+              "present": true,
+              "text": "\"/src/audit_placeholders.rs\""
+            },
+            {
+              "present": true,
+              "text": "audit_placeholders::unresolved(value)"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 633,
+          "pass": true,
+          "symbol": "whole-file prepass contract and audit binding review"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    },
+    {
+      "actual_sha256": "e95f9e977346ec29abbf9c94005d2ff8400246c04b60cc8fa73512cc0dd77254",
+      "classification": "new",
+      "declared_path": "src/accept_m4_policy.rs",
+      "expected_sha256": "e95f9e977346ec29abbf9c94005d2ff8400246c04b60cc8fa73512cc0dd77254",
+      "id": "repo_accept_m4_policy",
+      "line_count": 1921,
+      "normalized_path": "src/accept_m4_policy.rs",
+      "pass": true,
+      "regions": [
+        {
+          "anchors": [
+            {
+              "present": true,
+              "text": "use crate::contract::{"
+            },
+            {
+              "present": true,
+              "text": "sha, unresolved, value"
+            },
+            {
+              "present": true,
+              "text": "fn acceptance_contract"
+            },
+            {
+              "present": true,
+              "text": "fn deployment_contract"
+            },
+            {
+              "present": true,
+              "text": "fn check_policy_header"
+            },
+            {
+              "present": true,
+              "text": "!unresolved(p)"
+            },
+            {
+              "present": true,
+              "text": "p[\"deployment\"] == deployment_contract()"
+            },
+            {
+              "present": true,
+              "text": "fn consume_evidence"
+            },
+            {
+              "present": true,
+              "text": "fn prepare("
+            },
+            {
+              "present": true,
+              "text": "pub fn materialize("
+            },
+            {
+              "present": true,
+              "text": "pub fn recheck"
+            },
+            {
+              "present": true,
+              "text": "pub struct Ledger"
+            },
+            {
+              "present": true,
+              "text": "recursive_exact_RUNTIME_and_reserved_value_substrings"
+            }
+          ],
+          "first_line": 1,
+          "in_bounds": true,
+          "index": 0,
+          "last_line": 1921,
+          "pass": true,
+          "symbol": "whole-file policy and evidence-consumer integration review"
+        }
+      ],
+      "root": "repo",
+      "sha256_match": true,
+      "working_copy_matches_blob": true
+    }
+  ],
+  "inventory_sha256": "18f8b0d17959b8f3f9120cb14eec24a610e2cbf883f44405784a5b80c7330ca4",
+  "line_semantics": "one-based inclusive, LF-delimited",
+  "passing_file_hash_comparisons": 24,
+  "passing_region_checks": 92,
+  "platform": "Linux-6.8.0-149-generic-x86_64-with-glibc2.35",
+  "python": "3.10.12",
+  "region_count": 92,
+  "repo_path_aliases": {
+    "cuda_math.rs": "src/cuda_math.rs",
+    "http_serve.rs": "src/http_serve.rs",
+    "m2_route.rs": "src/m2_route.rs",
+    "model.rs": "src/model.rs",
+    "precision.rs": "src/precision.rs",
+    "rustv1/src/cuda_math.rs": "src/cuda_math.rs",
+    "rustv1/src/http_serve.rs": "src/http_serve.rs",
+    "rustv1/src/m2_route.rs": "src/m2_route.rs",
+    "rustv1/src/model.rs": "src/model.rs",
+    "rustv1/src/precision.rs": "src/precision.rs"
+  },
+  "repo_root": "/work/rustv1",
+  "repository_revision": "778a6c6b05a0d7f8e865298dde88652b69e4aba4",
+  "rust_syntax_parsed": false,
+  "schema": "rustv1.region_report.v3.1",
+  "semantic_audit_completed_by_verifier": false,
+  "verifier_sha256": "0561fdd4460f82d547bac4a685510381681fdbb1be6cb41758b374163d597cb9"
+}

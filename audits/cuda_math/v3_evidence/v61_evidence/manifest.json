@@ -1,0 +1,28 @@
+{
+ "schema": "rustv1.v61_supplemental_manifest.v1",
+ "repository_revision": "778a6c6b05a0d7f8e865298dde88652b69e4aba4",
+ "tag": "v0.5.2-m4",
+ "scope": "single-gap closure: R1 effective rustc resolution record; accepted inventory/report/provenance re-attached byte-identical, counts unchanged 24/92",
+ "note_new_evidence": "captured in a fresh Modal container with the same image and identical environment as the v60 qualified-build run; disclosed as new capture, not retrospectively attributed",
+ "key_values": {
+  "active_toolchain": "1.99.1-x86_64-unknown-linux-gnu (overridden by /work/rustv1/rust-toolchain.toml)",
+  "resolved_rustc_path": "/root/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc",
+  "resolved_rustc_sha256": "b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853",
+  "rustup_proxy_sha256_v60": "b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55",
+  "no_hidden_rustup_overrides": "rustup show active-toolchain attributes selection solely to the checkout's rust-toolchain.toml"
+ },
+ "accepted_unchanged_sha256": {
+  "inventory.json": "18f8b0d17959b8f3f9120cb14eec24a610e2cbf883f44405784a5b80c7330ca4",
+  "amendment_provenance.json": "8239bc63b528f4b12db469edbf193c6116ebf2ea0d9fd37b1d92f1ab072cc60d",
+  "region_report.json": "0dc2228370e07ee5b4ffe31acf294d62d63a79ce06bebadd98da5a6059fe5501"
+ },
+ "files": {
+  "inventory.json": "18f8b0d17959b8f3f9120cb14eec24a610e2cbf883f44405784a5b80c7330ca4",
+  "region_report.json": "0dc2228370e07ee5b4ffe31acf294d62d63a79ce06bebadd98da5a6059fe5501",
+  "amendment_provenance.json": "8239bc63b528f4b12db469edbf193c6116ebf2ea0d9fd37b1d92f1ab072cc60d",
+  "r1_rustc/resolved_rustc_path.txt": "a468cccd2d7f41521fa123c7099ea1aaf9f438823f16d10cff26df3d9c072401",
+  "r1_rustc/capture_script_rustv1_v61rustcident.py": "08e2fd584e5ff52838de8e1fb66e1f3105c541a5e6e6e01be95d404428db6838",
+  "r1_rustc/resolved_rustc_identity.txt": "c0a107c52e2cd1e85addade46ace934b77f1bfe1d3060827bd1aad1c02b4bae4",
+  "r1_rustc/rustc_resolution_record.txt": "c6f3a9e6bc0857550cd575a7a8b78c36f6911c9f2b56b61db9282b0d36d9deca"
+ }
+}

@@ -1,0 +1,12 @@
+rc=0
+b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853  /root/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc
+rustc 1.99.1 (58cf8f9c3 2026-10-13)
+binary: rustc
+commit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67
+commit-date: 2026-10-13
+host: x86_64-unknown-linux-gnu
+release: 1.99.1
+LLVM version: 23.1.1
+b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55  /root/.cargo/bin/rustc
+RESOLVED_NOT_SYMLINK
+/root/.rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu/bin/rustc

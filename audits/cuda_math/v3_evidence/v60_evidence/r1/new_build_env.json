@@ -1,0 +1,8 @@
+{
+ "CUDA_COMPUTE_CAP": "100",
+ "RV1_CUDA_COMPUTE_CAP": "__UNSET__",
+ "RUSTFLAGS": "__UNSET__",
+ "CARGO_ENCODED_RUSTFLAGS": "__UNSET__",
+ "HOME": "/root",
+ "CARGO_HOME": "__UNSET__"
+}

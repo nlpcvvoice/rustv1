@@ -1,0 +1,20 @@
+Modal fresh-clone verification (account nlp, CPU, ephemeral; app id scrubbed)
+run log markers, verbatim:
+CLONE_RC 0
+efacb644df7731b4dc6095c787974bd072420086e535a9b46f33c6f06ba09cbe  /work/tree.txt
+e0f228f6aba1d40204c65db6fc40cb924568a0b2198daffc3d7d01e04caa4174  Cargo.toml
+0d394b762911d84e1ca3e324d423a8c7ba6bde4ea893173bf8d931b0b420bbb5  Cargo.lock
+TREE_RC 0
+VEXIT 0
+  "all_pass": true,
+  "verifier_sha256": "0561fdd4460f82d547bac4a685510381681fdbb1be6cb41758b374163d597cb9"
+18f8b0d17959b8f3f9120cb14eec24a610e2cbf883f44405784a5b80c7330ca4  /work/am/inventory.json
+8239bc63b528f4b12db469edbf193c6116ebf2ea0d9fd37b1d92f1ab072cc60d  /work/am/amendment_provenance.json
+0dc2228370e07ee5b4ffe31acf294d62d63a79ce06bebadd98da5a6059fe5501  /work/am/region_report.json
+0561fdd4460f82d547bac4a685510381681fdbb1be6cb41758b374163d597cb9  /work/verify_cuda_regions_v3.py
+9696b82122ad80be8323cfa9638fe7950505fb5d14d2d65e8966ac9728ff0cd7  /work/amend_cuda_inventory.py
+AM_RC 0
+full dual-revision run (63db92d + 778a6c6) markers: CLONE_RC 0 HEADCUR_RC 0
+GEN_CURRENT_RC 0 VERIFY_CURRENT_RC 0 HEADFINAL_RC 0 GEN_FINAL_RC 0
+VERIFY_FINAL_RC 0 FEATURES_RC 0 ; two verifier stdout blocks each contain
+"all_pass": true with the same verifier_sha256.

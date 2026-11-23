@@ -1,0 +1,1070 @@
+{
+  "schema": "rustv1.region_inventory.v3.1",
+  "repository_revision": "63db92d873c61ed9f7dac0345aba837ff48a8a7f",
+  "repo_path_aliases": {
+    "model.rs": "src/model.rs",
+    "http_serve.rs": "src/http_serve.rs",
+    "precision.rs": "src/precision.rs",
+    "cuda_math.rs": "src/cuda_math.rs",
+    "m2_route.rs": "src/m2_route.rs",
+    "rustv1/src/model.rs": "src/model.rs",
+    "rustv1/src/http_serve.rs": "src/http_serve.rs",
+    "rustv1/src/precision.rs": "src/precision.rs",
+    "rustv1/src/cuda_math.rs": "src/cuda_math.rs",
+    "rustv1/src/m2_route.rs": "src/m2_route.rs"
+  },
+  "files": [
+    {
+      "id": "candle_cuda",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "candle-core-0.9.2/src/cuda_backend/mod.rs",
+      "sha256": "bc2bd5fe3702bfccb49d64af07dc4197013d6617c720643cd2a14b718f4134e2",
+      "regions": [
+        [
+          1343,
+          1433,
+          "gemm_config",
+          [
+            "fn gemm_config"
+          ]
+        ],
+        [
+          2188,
+          2242,
+          "CudaStorage::matmul",
+          [
+            "fn matmul"
+          ]
+        ],
+        [
+          2473,
+          2474,
+          "MM_F16_REDUCED_PRECISION",
+          [
+            "MM_F16_REDUCED_PRECISION"
+          ]
+        ],
+        [
+          2475,
+          2476,
+          "MM_BF16_REDUCED_PRECISION",
+          [
+            "MM_BF16_REDUCED_PRECISION"
+          ]
+        ],
+        [
+          2477,
+          2478,
+          "MM_F32_REDUCED_PRECISION",
+          [
+            "MM_F32_REDUCED_PRECISION"
+          ]
+        ],
+        [
+          2482,
+          2484,
+          "gemm_reduced_precision_f32",
+          [
+            "fn gemm_reduced_precision_f32"
+          ]
+        ],
+        [
+          2488,
+          2490,
+          "set_gemm_reduced_precision_f32",
+          [
+            "fn set_gemm_reduced_precision_f32"
+          ]
+        ],
+        [
+          2494,
+          2496,
+          "gemm_reduced_precision_f16",
+          [
+            "fn gemm_reduced_precision_f16"
+          ]
+        ],
+        [
+          2500,
+          2502,
+          "set_gemm_reduced_precision_f16",
+          [
+            "fn set_gemm_reduced_precision_f16"
+          ]
+        ],
+        [
+          2506,
+          2508,
+          "gemm_reduced_precision_bf16",
+          [
+            "fn gemm_reduced_precision_bf16"
+          ]
+        ],
+        [
+          2512,
+          2514,
+          "set_gemm_reduced_precision_bf16",
+          [
+            "fn set_gemm_reduced_precision_bf16"
+          ]
+        ],
+        [
+          2516,
+          2564,
+          "gemm_strided_batched_f32",
+          [
+            "fn gemm_strided_batched_f32"
+          ]
+        ],
+        [
+          2566,
+          2623,
+          "gemm_strided_batched_f16",
+          [
+            "fn gemm_strided_batched_f16"
+          ]
+        ],
+        [
+          2625,
+          2682,
+          "gemm_strided_batched_bf16",
+          [
+            "fn gemm_strided_batched_bf16"
+          ]
+        ],
+        [
+          1507,
+          1646,
+          "CudaStorage::to_dtype",
+          [
+            "fn to_dtype"
+          ]
+        ],
+        [
+          97,
+          100,
+          "kernel_name",
+          [
+            "fn kernel_name"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "candle_device",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "candle-core-0.9.2/src/cuda_backend/device.rs",
+      "sha256": "40f4bb9512f9001a983802129b6cfee16381a24b7876f13ba02cd49b6dfe1925",
+      "regions": [
+        [
+          33,
+          43,
+          "CudaDevice",
+          [
+            "struct CudaDevice"
+          ]
+        ],
+        [
+          247,
+          249,
+          "CudaDevice::cublas_handle",
+          [
+            "fn cublas_handle"
+          ]
+        ],
+        [
+          253,
+          271,
+          "CudaDevice::new_with_stream",
+          [
+            "fn new_with_stream"
+          ]
+        ],
+        [
+          277,
+          295,
+          "BackendDevice::new",
+          [
+            "fn new"
+          ]
+        ],
+        [
+          176,
+          196,
+          "CudaDevice::compile",
+          [
+            "fn compile"
+          ]
+        ],
+        [
+          202,
+          225,
+          "CudaDevice::get_or_load_custom_func",
+          [
+            "fn get_or_load_custom_func"
+          ]
+        ],
+        [
+          227,
+          245,
+          "CudaDevice::get_or_load_func",
+          [
+            "fn get_or_load_func"
+          ]
+        ],
+        [
+          148,
+          150,
+          "CudaFunc::builder",
+          [
+            "fn builder"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "candle_tensor",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "candle-core-0.9.2/src/tensor.rs",
+      "sha256": "25b95a8deecffa87d55325d9ae258b9552778a7eb24a653b7c1438340aa21487",
+      "regions": [
+        [
+          159,
+          177,
+          "from_storage",
+          [
+            "fn from_storage"
+          ]
+        ],
+        [
+          1495,
+          1538,
+          "Tensor::matmul",
+          [
+            "fn matmul"
+          ]
+        ],
+        [
+          1545,
+          1560,
+          "Tensor::broadcast_matmul",
+          [
+            "fn broadcast_matmul"
+          ]
+        ],
+        [
+          2453,
+          2462,
+          "Tensor::to_dtype",
+          [
+            "fn to_dtype"
+          ]
+        ],
+        [
+          2250,
+          2261,
+          "Tensor::t",
+          [
+            "fn t("
+          ]
+        ],
+        [
+          2265,
+          2282,
+          "Tensor::transpose",
+          [
+            "fn transpose"
+          ]
+        ],
+        [
+          2466,
+          2477,
+          "Tensor::contiguous",
+          [
+            "fn contiguous"
+          ]
+        ],
+        [
+          2523,
+          2551,
+          "Tensor::reshape",
+          [
+            "fn reshape"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "candle_storage",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "candle-core-0.9.2/src/storage.rs",
+      "sha256": "6241271357ee152f0244e47053f40de811832fca89e8aece6420bbc1b5c485c4",
+      "regions": [
+        [
+          47,
+          65,
+          "Storage::same_device",
+          [
+            "fn same_device"
+          ]
+        ],
+        [
+          67,
+          75,
+          "Storage::same_dtype",
+          [
+            "fn same_dtype"
+          ]
+        ],
+        [
+          769,
+          798,
+          "Storage::matmul",
+          [
+            "fn matmul"
+          ]
+        ],
+        [
+          205,
+          220,
+          "Storage::apply_op1",
+          [
+            "fn apply_op1"
+          ]
+        ],
+        [
+          188,
+          203,
+          "Storage::to_dtype",
+          [
+            "fn to_dtype"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "cudarc_safe_gemm",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "cudarc-0.19.10/src/cublas/safe/gemm.rs",
+      "sha256": "ede0422de76c4f99199ebd011f7792f54f6404dbfb47a454eac54c0f453493cf",
+      "regions": [
+        [
+          8,
+          19,
+          "GemmConfig",
+          [
+            "struct GemmConfig"
+          ]
+        ],
+        [
+          23,
+          29,
+          "StridedBatchedConfig",
+          [
+            "struct StridedBatchedConfig"
+          ]
+        ],
+        [
+          32,
+          60,
+          "Gemm",
+          [
+            "trait Gemm"
+          ]
+        ],
+        [
+          64,
+          97,
+          "Gemm<f16>::gemm",
+          [
+            "fn gemm"
+          ]
+        ],
+        [
+          98,
+          139,
+          "Gemm<f16>::gemm_strided_batched",
+          [
+            "fn gemm_strided_batched"
+          ]
+        ],
+        [
+          144,
+          181,
+          "Gemm<bf16>::gemm",
+          [
+            "fn gemm"
+          ]
+        ],
+        [
+          182,
+          223,
+          "Gemm<bf16>::gemm_strided_batched",
+          [
+            "fn gemm_strided_batched"
+          ]
+        ],
+        [
+          227,
+          253,
+          "Gemm<f32>::gemm",
+          [
+            "fn gemm"
+          ]
+        ],
+        [
+          255,
+          285,
+          "Gemm<f32>::gemm_strided_batched",
+          [
+            "fn gemm_strided_batched"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "cudarc_safe",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "cudarc-0.19.10/src/cublas/safe/mod.rs",
+      "sha256": "5842b11f0cef6e87a2de852d1c57756ca3e19c4082b71d5bd580bcbcede1d843",
+      "regions": [
+        [
+          35,
+          42,
+          "CudaBlas::new",
+          [
+            "fn new"
+          ]
+        ],
+        [
+          45,
+          47,
+          "CudaBlas::handle",
+          [
+            "fn handle"
+          ]
+        ],
+        [
+          55,
+          58,
+          "CudaBlas::set_stream",
+          [
+            "fn set_stream"
+          ]
+        ],
+        [
+          67,
+          75,
+          "CudaBlas::set_pointer_mode",
+          [
+            "fn set_pointer_mode"
+          ]
+        ],
+        [
+          79,
+          85,
+          "CudaBlas::get_pointer_mode",
+          [
+            "fn get_pointer_mode"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "cudarc_result",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "cudarc-0.19.10/src/cublas/result.rs",
+      "sha256": "01467682707577979cf669b8493cda19465fc34f8653e74265abf08062c1efa1",
+      "regions": [
+        [
+          29,
+          35,
+          "create_handle",
+          [
+            "fn create_handle"
+          ]
+        ],
+        [
+          53,
+          58,
+          "set_stream",
+          [
+            "fn set_stream"
+          ]
+        ],
+        [
+          373,
+          416,
+          "gemm_ex",
+          [
+            "fn gemm_ex"
+          ]
+        ],
+        [
+          427,
+          478,
+          "gemm_strided_batched_ex",
+          [
+            "fn gemm_strided_batched_ex"
+          ]
+        ],
+        [
+          174,
+          194,
+          "sgemm",
+          [
+            "fn sgemm("
+          ]
+        ],
+        [
+          301,
+          326,
+          "sgemm_strided_batched",
+          [
+            "fn sgemm_strided_batched"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "cudarc_safe_grouped_gemm",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "cudarc-0.19.10/src/cublas/safe/grouped_gemm.rs",
+      "sha256": "feef119470d453fe0409a9ed124539d168aa1f07edc8b5434f984a542e15eb5b",
+      "regions": [
+        [
+          12,
+          43,
+          "GroupedGemmDtype and F16/BF16 implementations",
+          [
+            "trait GroupedGemmDtype",
+            "impl GroupedGemmDtype for half::f16",
+            "impl GroupedGemmDtype for half::bf16"
+          ]
+        ],
+        [
+          45,
+          100,
+          "GroupedGemmConfig",
+          [
+            "struct GroupedGemmConfig"
+          ]
+        ],
+        [
+          102,
+          122,
+          "GroupedGemm",
+          [
+            "trait GroupedGemm"
+          ]
+        ],
+        [
+          124,
+          148,
+          "grouped_gemm older-CUDA branch",
+          [
+            "fn grouped_gemm"
+          ]
+        ],
+        [
+          150,
+          233,
+          "grouped_gemm supported-CUDA branch",
+          [
+            "fn grouped_gemm"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "candle_nn_ops",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "candle-nn-0.9.2/src/ops.rs",
+      "sha256": "9c60662c0e2c890777a09b2bbea34da8bef716bd247b8775da0a61fe4263068d",
+      "regions": [
+        [
+          22,
+          29,
+          "softmax",
+          [
+            "fn softmax"
+          ]
+        ],
+        [
+          288,
+          326,
+          "SoftmaxLastDim::cpu_fwd",
+          [
+            "fn cpu_fwd"
+          ]
+        ],
+        [
+          328,
+          383,
+          "SoftmaxLastDim::cuda_fwd",
+          [
+            "fn cuda_fwd"
+          ]
+        ],
+        [
+          429,
+          431,
+          "softmax_last_dim",
+          [
+            "fn softmax_last_dim"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "candle_nn_linear",
+      "classification": "inherited",
+      "root": "crate",
+      "path": "candle-nn-0.9.2/src/linear.rs",
+      "sha256": "c7827f685ef90affe4cefee1d133e9acdbd2489125e6f47f233f62e289a9c658",
+      "regions": [
+        [
+          29,
+          31,
+          "Linear::new",
+          [
+            "fn new"
+          ]
+        ],
+        [
+          43,
+          78,
+          "Linear::forward",
+          [
+            "fn forward"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_precision",
+      "classification": "inherited",
+      "root": "repo",
+      "path": "rustv1/src/precision.rs",
+      "sha256": "a2e29333acd3424b1c5a16f17e335994cea46cd54facbba54916da307a026719",
+      "regions": [
+        [
+          35,
+          37,
+          "PrecisionProfile::single_norm",
+          [
+            "fn single_norm"
+          ]
+        ],
+        [
+          39,
+          41,
+          "PrecisionProfile::single_activation",
+          [
+            "fn single_activation"
+          ]
+        ],
+        [
+          43,
+          45,
+          "PrecisionProfile::wide_qk",
+          [
+            "fn wide_qk"
+          ]
+        ],
+        [
+          47,
+          49,
+          "PrecisionProfile::wide_pv",
+          [
+            "fn wide_pv"
+          ]
+        ],
+        [
+          52,
+          76,
+          "rms",
+          [
+            "fn rms"
+          ]
+        ],
+        [
+          78,
+          90,
+          "silu_mul",
+          [
+            "fn silu_mul"
+          ]
+        ],
+        [
+          96,
+          123,
+          "attention",
+          [
+            "fn attention"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_cuda_math",
+      "classification": "inherited",
+      "root": "repo",
+      "path": "rustv1/src/cuda_math.rs",
+      "sha256": "55d58a4ea4086f2f4c59934a43b8ba0b27e24952d9c97fe4df7ecf9c64431ca7",
+      "regions": [
+        [
+          16,
+          18,
+          "PIN_ACTIVE",
+          [
+            "static PIN_ACTIVE"
+          ]
+        ],
+        [
+          28,
+          34,
+          "Settings::read",
+          [
+            "fn read"
+          ]
+        ],
+        [
+          36,
+          38,
+          "Settings::all_disabled",
+          [
+            "fn all_disabled"
+          ]
+        ],
+        [
+          59,
+          65,
+          "MathModePin",
+          [
+            "struct MathModePin"
+          ]
+        ],
+        [
+          68,
+          100,
+          "MathModePin::pin",
+          [
+            "fn pin"
+          ]
+        ],
+        [
+          102,
+          151,
+          "MathModePin::check",
+          [
+            "fn check"
+          ]
+        ],
+        [
+          155,
+          159,
+          "MathModePin::drop",
+          [
+            "fn drop"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_model",
+      "classification": "renewed",
+      "root": "repo",
+      "path": "model.rs",
+      "sha256": "9e75bd1e141502c4ac4d1deac26db4e637829747466880e6552e9340b71e3594",
+      "regions": [
+        [
+          1,
+          1794,
+          "whole-file model and executor renewal",
+          [
+            "struct BatchedExecution",
+            "fn validate_engine",
+            "fn fits",
+            "struct ExecutionRow",
+            "fn semantic_config_check",
+            "fn weight_files",
+            "fn theta",
+            "fn yarn_params",
+            "fn expected_manifest",
+            "fn validate_manifest",
+            "fn linear3",
+            "fn no_bias",
+            "fn build_rope_tables",
+            "struct Model",
+            "fn load",
+            "fn with_precision",
+            "fn rope",
+            "fn repeat_kv",
+            "fn run_decoder",
+            "fn run_decoder_padded",
+            "fn pooled_mean",
+            "fn forward(",
+            "struct IndependentExecutor",
+            "fn load_batched_with_attestation",
+            "fn load_configured",
+            "fn record",
+            "fn validate_sequences",
+            "fn forward_serving",
+            "fn forward_batch(",
+            "fn forward_batch_validated",
+            "fn forward_validated"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_m2_route",
+      "classification": "renewed",
+      "root": "repo",
+      "path": "m2_route.rs",
+      "sha256": "bc4648ad9f7acd195257b552a91520c7b31e73c06a3a3b7a17fd1c0ccafde2f5",
+      "regions": [
+        [
+          1,
+          88,
+          "whole-file route renewal",
+          [
+            "fn open(",
+            "fn open_with_attestation",
+            "fn open_batched_with_attestation",
+            "MathModePin::pin",
+            "Device::new_cuda"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_http_serve",
+      "classification": "new",
+      "root": "repo",
+      "path": "http_serve.rs",
+      "sha256": "c5455bb5d134feae004a3a68cddacab889672f5f4b4f1f801b9c7a188c786693",
+      "regions": [
+        [
+          1,
+          2027,
+          "whole-file serving dispatch and ownership review",
+          [
+            "feature = \"scheduler-test-seam\"",
+            "struct Config",
+            "fn validate_tokens",
+            "fn validate_output",
+            "trait Backend",
+            "struct Shared",
+            "struct BackendHandle",
+            "struct App",
+            "struct Service",
+            "fn worker_loop",
+            "fn run_batch",
+            "fn owner_control",
+            "struct WorkerExit"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_yarn",
+      "classification": "new",
+      "root": "repo",
+      "path": "src/yarn.rs",
+      "sha256": "2344cf1b16222b61dc2a2648e2bb6b4722d0b3125fee7ca47a296e6cd954babe",
+      "regions": [
+        [
+          1,
+          93,
+          "whole-file reached YaRN helpers",
+          [
+            "fn standard_yarn_inv_freq",
+            "fn llama4_attn_scale"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_serve_m3",
+      "classification": "new",
+      "root": "repo",
+      "path": "src/bin/serve_m3.rs",
+      "sha256": "7756694aafef4bd9893b5341b66fed1a494b78ce5a552f050b1867e438eb1c71",
+      "regions": [
+        [
+          1,
+          750,
+          "whole-file production entry point and audit loader",
+          [
+            "struct CudaBackend",
+            "fn placeholder",
+            "fn artifact_path",
+            "fn load(",
+            "async fn run(",
+            "open_batched_with_attestation",
+            "Service::spawn",
+            "mod audit_placeholders",
+            "\"/src/audit_placeholders.rs\"",
+            "audit_placeholders::unresolved(value)"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_golden_export_m4",
+      "classification": "new",
+      "root": "repo",
+      "path": "src/bin/golden_export_m4.rs",
+      "sha256": "37293a24d3f9aa0c1f653200f5086db377ffe08f3d77f7c72256b591c73c32ef",
+      "regions": [
+        [
+          1,
+          654,
+          "whole-file exporter audit gate and execution entry point",
+          [
+            "fn unresolved",
+            "fn verify_audit",
+            "fn validate_shape",
+            "struct Export",
+            "fn batch(",
+            "pub fn run(",
+            "open_batched_with_attestation",
+            "mod audit_placeholders",
+            "\"/src/audit_placeholders.rs\"",
+            "audit_placeholders::unresolved(value)"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "cargo_toml",
+      "classification": "binding",
+      "root": "repo",
+      "path": "Cargo.toml",
+      "sha256": "e0f228f6aba1d40204c65db6fc40cb924568a0b2198daffc3d7d01e04caa4174",
+      "regions": []
+    },
+    {
+      "id": "cargo_lock",
+      "classification": "binding",
+      "root": "repo",
+      "path": "Cargo.lock",
+      "sha256": "0d394b762911d84e1ca3e324d423a8c7ba6bde4ea893173bf8d931b0b420bbb5",
+      "regions": []
+    },
+    {
+      "id": "repo_audit_placeholders",
+      "classification": "new",
+      "root": "repo",
+      "path": "src/audit_placeholders.rs",
+      "sha256": "f7756e6f5a43e2942a0ae809e99ac1dc4aba6d6507bafd983d092f2f6fb67d20",
+      "regions": [
+        [
+          1,
+          56,
+          "whole-file shared placeholder scanner and regression tests",
+          [
+            "pub fn unresolved",
+            "text == \"RUNTIME\"",
+            "key == \"RUNTIME\"",
+            "Value::Array",
+            "Value::Object",
+            "FILLED_BY_INTEGRATOR",
+            "<SHA256:",
+            "PENDING_ROUNDTRIP",
+            "fn rejects_exact_sentinels_recursively",
+            "fn allows_descriptions_and_audit_identifiers",
+            "fn retains_reserved_value_substring_rejection"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_accept_m3",
+      "classification": "new",
+      "root": "repo",
+      "path": "src/bin/accept_m3.rs",
+      "sha256": "3ee476c36d0d4c3d150780bded79c9aafcd5449eb012e20ca3c2b71603bad269",
+      "regions": [
+        [
+          1,
+          1513,
+          "whole-file legacy acceptance loader integration review",
+          [
+            "fn has_placeholder",
+            "pub fn load_bundle",
+            "!has_placeholder(&policy_val)",
+            "!has_placeholder(&audit)",
+            "fn artifact_path",
+            "fn required_path",
+            "running executable hash mismatch"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_accept_m4_contract",
+      "classification": "new",
+      "root": "repo",
+      "path": "src/accept_m4_contract.rs",
+      "sha256": "e55a8ab3034b54177e89812869f101d14389784c63d0644b6fc4a7b832dfe2f2",
+      "regions": [
+        [
+          1,
+          640,
+          "whole-file prepass contract and audit binding review",
+          [
+            "pub fn unresolved",
+            "pub fn load(",
+            "fn load_candidates",
+            "!unresolved(&input_value)",
+            "!unresolved(&audit)",
+            "active audit scope/bindings",
+            "batch_export_provenance",
+            "batch_export_manifest",
+            "batch_shapes"
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "repo_accept_m4_policy",
+      "classification": "new",
+      "root": "repo",
+      "path": "src/accept_m4_policy.rs",
+      "sha256": "2ec91c644c0313243eccd76215023eacb5c881d9bf90caeb3ea2053076716d7e",
+      "regions": [
+        [
+          1,
+          1921,
+          "whole-file policy and evidence-consumer integration review",
+          [
+            "use crate::contract::{",
+            "sha, unresolved, value",
+            "fn acceptance_contract",
+            "fn deployment_contract",
+            "fn check_policy_header",
+            "!unresolved(p)",
+            "p[\"deployment\"] == deployment_contract()",
+            "fn consume_evidence",
+            "fn prepare(",
+            "pub fn materialize(",
+            "pub fn recheck",
+            "pub struct Ledger"
+          ]
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+RV1_CUDA_COMPUTE_CAP=__UNSET__ (build.rs emitted the default sm_100)

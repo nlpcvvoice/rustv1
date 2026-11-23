@@ -1,0 +1,79 @@
+{
+ "schema": "rustv1.v59_supplemental_manifest.v1",
+ "repository_revision": "778a6c6b05a0d7f8e865298dde88652b69e4aba4",
+ "tag": "v0.5.2-m4",
+ "prior_revision": "63db92d873c61ed9f7dac0345aba837ff48a8a7f",
+ "prior_tag": "v0.5.1-m4",
+ "mappings": {
+  "preimages/": "loader/scan-module source bytes as supplied at revision 63db92d (v57/v58 archived preimages; generator input bindings)",
+  "sources778/": "same files at final revision 778a6c6 (post-loader-fix, verifier-confirmed bytes)",
+  "staging": "generator expects package paths sources/<path with / -> __>; v58 staged preimages/ with identical names; v59 keeps preimages/ as the archived staging copy; cuda_regions_6036137.json at package root",
+  "cuda_regions_6036137.json": "baseline v55 inventory at 6036137 (generator input, unchanged)",
+  "amend_cuda_inventory.py / verify_cuda_regions_v3.py": "auditor tools verbatim (generator sha 9696b82122ad80be8323cfa9638fe7950505fb5d14d2d65e8966ac9728ff0cd7; verifier sha 0561fdd4460f82d547bac4a685510381681fdbb1be6cb41758b374163d597cb9)"
+ },
+ "evidence_classes": {
+  "baseline_6036137": "accepted v57 \u00a71; not re-attached here (unchanged)",
+  "current_63db92d": "accepted v58 \u00a71 for pre-loader-fix state; not re-attached here",
+  "final_778a6c6_modal_unmodified": "g3/ \u2014 complete unmodified execution record (generator + verifier, fresh public clone, container paths /work/*, no postprocessing)",
+  "final_778a6c6_local_scrubbed_derivative": "v58_scrubbed_local_final_region_report.json \u2014 postprocessed derivative from the v58 local execution (absolute workstation paths replaced with /work aliases); original not retained; retained for custody continuity only",
+  "g1_build_configuration": "g1/ \u2014 module/build-configuration closure at 778a6c6 (git show bytes + container config probe)",
+  "g2_feature_and_build": "g2/ \u2014 retained raw feature capture + qualified production build identity at 778a6c6"
+ },
+ "transformations_record": {
+  "v58_scrubbed_local_final_region_report.json": {
+   "description": "path-alias substitution only (absolute workstation paths replaced with /work aliases)",
+   "supplied_sha_v58": "ffd39eb4e6b9c47cb702b02ee33002e4564e9fdf617833570f4db8f55d65f312"
+  },
+  "modal_fresh_clone_confirmation.txt": "hand-extracted verbatim marker/digest lines from the Modal run log; app ids removed for privacy; not a complete execution record (superseded by g3/ for issuance)"
+ },
+ "g3_unmodified_execution_detached_sha256": {
+  "g3/inventory.json": "18f8b0d17959b8f3f9120cb14eec24a610e2cbf883f44405784a5b80c7330ca4",
+  "g3/amendment_provenance.json": "8239bc63b528f4b12db469edbf193c6116ebf2ea0d9fd37b1d92f1ab072cc60d",
+  "g3/region_report.json": "0dc2228370e07ee5b4ffe31acf294d62d63a79ce06bebadd98da5a6059fe5501",
+  "g3/verifier_stdout.txt": "0dc2228370e07ee5b4ffe31acf294d62d63a79ce06bebadd98da5a6059fe5501",
+  "g3/verifier_stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "g3/verifier_exit.txt": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+  "g3/generator_exit.txt": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+  "g3/generator_stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+ },
+ "files": {
+  "amend_cuda_inventory.py": "9696b82122ad80be8323cfa9638fe7950505fb5d14d2d65e8966ac9728ff0cd7",
+  "verify_cuda_regions_v3.py": "0561fdd4460f82d547bac4a685510381681fdbb1be6cb41758b374163d597cb9",
+  "modal_fresh_clone_confirmation.txt": "1511db204d8021216b65d14e87c51d2ffbfbce65bd14e0a6de7bd0f916b8b4ef",
+  "Cargo.lock": "0d394b762911d84e1ca3e324d423a8c7ba6bde4ea893173bf8d931b0b420bbb5",
+  "cuda_regions_6036137.json": "3ac30e62c0cc960b10858681b31d14c765cbbfc9d6ab590a2cdf4c94b67acc1f",
+  "Cargo.toml": "e0f228f6aba1d40204c65db6fc40cb924568a0b2198daffc3d7d01e04caa4174",
+  "loader_fix_applied_63db92d_to_778a6c6.diff": "4724bd90d752b82628a880c9dce53e8c79a1ffa7a70e5e8df4c520c738f56be7",
+  "v58_scrubbed_local_final_region_report.json": "ffd39eb4e6b9c47cb702b02ee33002e4564e9fdf617833570f4db8f55d65f312",
+  "g2/qualified_build_binary_sha256.txt": "6110a9d46eb7bbba8295ecc7d7ac8f3b1343ba666226dd882b17e12c397f670f",
+  "g2/feature_tree_raw_stdout.txt": "efacb644df7731b4dc6095c787974bd072420086e535a9b46f33c6f06ba09cbe",
+  "g2/qualified_build_log.txt": "dfd92e17c46c3252bfd4bdc4604906141a0bb7d61261bc53178147bf20da0bdd",
+  "g2/feature_tree_command.txt": "b65b5f013562e84fae47417107dedf18f53a9539ef4fff4a2094ab9ca129d9a2",
+  "g2/capture_env.txt": "63e0aacf1df4e67aee227c32891b7f3a5db6ed9f1efab5ed5a846866a2d548ce",
+  "g2/feature_tree_stderr.txt": "43190cfde06b839709a80c9e4b637880e0e4d9280bd218b642a024a876e064ae",
+  "g2/feature_tree_exit.txt": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+  "g2/build_env.json": "34cbab8d7cbefc9e34fd1558888554e181c8b486959eafa8c8f4f200949ddd29",
+  "g1/cargo_config_probe.txt": "e2ed2cc570ffe5d8826b8599afcf385de571e5ffcc94f53cc92883d6990c0ee7",
+  "g1/src__lib.rs": "90f944322490e82a9d39e1dd058063524509bc56644766819a0d1579280ef832",
+  "g1/build.rs": "6a0ba0449bc8c287c5f0143198e5ff0ee733064499cea5c04ab22b46926c57e9",
+  "g1/rust-toolchain.toml": "5e7517b95a2b4e810124f84091dd4a6e3f2192523fcac7b6d52abc7fc6aff91d",
+  "preimages/src__bin__accept_m3.rs": "3ee476c36d0d4c3d150780bded79c9aafcd5449eb012e20ca3c2b71603bad269",
+  "preimages/src__accept_m4_contract.rs": "e55a8ab3034b54177e89812869f101d14389784c63d0644b6fc4a7b832dfe2f2",
+  "preimages/src__accept_m4_policy.rs": "2ec91c644c0313243eccd76215023eacb5c881d9bf90caeb3ea2053076716d7e",
+  "preimages/src__audit_placeholders.rs": "f7756e6f5a43e2942a0ae809e99ac1dc4aba6d6507bafd983d092f2f6fb67d20",
+  "preimages/src__bin__golden_export_m4.rs": "37293a24d3f9aa0c1f653200f5086db377ffe08f3d77f7c72256b591c73c32ef",
+  "preimages/src__bin__serve_m3.rs": "7756694aafef4bd9893b5341b66fed1a494b78ce5a552f050b1867e438eb1c71",
+  "g3/verifier_stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "g3/inventory.json": "18f8b0d17959b8f3f9120cb14eec24a610e2cbf883f44405784a5b80c7330ca4",
+  "g3/region_report.json": "0dc2228370e07ee5b4ffe31acf294d62d63a79ce06bebadd98da5a6059fe5501",
+  "g3/verifier_exit.txt": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+  "g3/amendment_provenance.json": "8239bc63b528f4b12db469edbf193c6116ebf2ea0d9fd37b1d92f1ab072cc60d",
+  "g3/generator_exit.txt": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+  "g3/verifier_stdout.txt": "0dc2228370e07ee5b4ffe31acf294d62d63a79ce06bebadd98da5a6059fe5501",
+  "g3/generator_stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sources778/src__bin__accept_m3.rs": "fbe0c2cecd69a1e2b3a6dafed8c58302a817d2ab72fa1cf9f25d84a1ef0ea3db",
+  "sources778/src__accept_m4_contract.rs": "c51a0c18ab9836f5ed7ccab97aa2bed2b56dc3ae3dbd5018ab3dd2f561ae9522",
+  "sources778/src__accept_m4_policy.rs": "e95f9e977346ec29abbf9c94005d2ff8400246c04b60cc8fa73512cc0dd77254",
+  "sources778/src__audit_placeholders.rs": "f7756e6f5a43e2942a0ae809e99ac1dc4aba6d6507bafd983d092f2f6fb67d20"
+ }
+}

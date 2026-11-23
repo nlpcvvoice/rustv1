@@ -1,0 +1,11 @@
+{
+ "RUSTFLAGS": "__UNSET__",
+ "CARGO_ENCODED_RUSTFLAGS": "__UNSET__",
+ "CUDA_COMPUTE_CAP": "100",
+ "CARGO_HOME": "__UNSET__",
+ "CC": "__UNSET__",
+ "CXX": "__UNSET__",
+ "NVCC": "__UNSET__",
+ "CUDA_HOME": "__UNSET__",
+ "PATH": "/root/.cargo/bin:/usr/local/cuda/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+}

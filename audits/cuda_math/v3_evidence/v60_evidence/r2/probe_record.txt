@@ -1,0 +1,13 @@
+ABSENT /work/rustv1/.cargo/config.toml
+ABSENT /work/rustv1/.cargo/config
+ABSENT /work/.cargo/config.toml
+ABSENT /work/.cargo/config
+ABSENT /.cargo/config.toml
+ABSENT /.cargo/config
+ABSENT /root/.cargo/config.toml
+ABSENT /root/.cargo/config
+HOME=/root
+CARGO_HOME_env=__UNSET__
+effective_cargo_home=/root/.cargo
+environment_overrides_present={"CUDA_COMPUTE_CAP": "100"}
+all_other_CARGO_and_RUSTC_variables_absent=True

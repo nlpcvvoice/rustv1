@@ -1,0 +1,59 @@
+{
+  "basis": "bound supplied preimages; approved replacements in memory",
+  "checkout_used_to_generate_expectations": false,
+  "repository_revision": "778a6c6b05a0d7f8e865298dde88652b69e4aba4",
+  "baseline_inventory_sha256": "3ac30e62c0cc960b10858681b31d14c765cbbfc9d6ab590a2cdf4c94b67acc1f",
+  "generator_sha256": "9696b82122ad80be8323cfa9638fe7950505fb5d14d2d65e8966ac9728ff0cd7",
+  "inventory_sha256": "18f8b0d17959b8f3f9120cb14eec24a610e2cbf883f44405784a5b80c7330ca4",
+  "post_loader_patch": true,
+  "files": [
+    {
+      "path": "src/bin/serve_m3.rs",
+      "package_path": "sources/src__bin__serve_m3.rs",
+      "preimage_sha256": "7756694aafef4bd9893b5341b66fed1a494b78ce5a552f050b1867e438eb1c71",
+      "expected_sha256": "7756694aafef4bd9893b5341b66fed1a494b78ce5a552f050b1867e438eb1c71",
+      "first_line": 1,
+      "last_line": 750
+    },
+    {
+      "path": "src/bin/golden_export_m4.rs",
+      "package_path": "sources/src__bin__golden_export_m4.rs",
+      "preimage_sha256": "37293a24d3f9aa0c1f653200f5086db377ffe08f3d77f7c72256b591c73c32ef",
+      "expected_sha256": "37293a24d3f9aa0c1f653200f5086db377ffe08f3d77f7c72256b591c73c32ef",
+      "first_line": 1,
+      "last_line": 654
+    },
+    {
+      "path": "src/audit_placeholders.rs",
+      "package_path": "sources/src__audit_placeholders.rs",
+      "preimage_sha256": "f7756e6f5a43e2942a0ae809e99ac1dc4aba6d6507bafd983d092f2f6fb67d20",
+      "expected_sha256": "f7756e6f5a43e2942a0ae809e99ac1dc4aba6d6507bafd983d092f2f6fb67d20",
+      "first_line": 1,
+      "last_line": 56
+    },
+    {
+      "path": "src/bin/accept_m3.rs",
+      "package_path": "sources/src__bin__accept_m3.rs",
+      "preimage_sha256": "3ee476c36d0d4c3d150780bded79c9aafcd5449eb012e20ca3c2b71603bad269",
+      "expected_sha256": "fbe0c2cecd69a1e2b3a6dafed8c58302a817d2ab72fa1cf9f25d84a1ef0ea3db",
+      "first_line": 1,
+      "last_line": 1511
+    },
+    {
+      "path": "src/accept_m4_contract.rs",
+      "package_path": "sources/src__accept_m4_contract.rs",
+      "preimage_sha256": "e55a8ab3034b54177e89812869f101d14389784c63d0644b6fc4a7b832dfe2f2",
+      "expected_sha256": "c51a0c18ab9836f5ed7ccab97aa2bed2b56dc3ae3dbd5018ab3dd2f561ae9522",
+      "first_line": 1,
+      "last_line": 633
+    },
+    {
+      "path": "src/accept_m4_policy.rs",
+      "package_path": "sources/src__accept_m4_policy.rs",
+      "preimage_sha256": "2ec91c644c0313243eccd76215023eacb5c881d9bf90caeb3ea2053076716d7e",
+      "expected_sha256": "e95f9e977346ec29abbf9c94005d2ff8400246c04b60cc8fa73512cc0dd77254",
+      "first_line": 1,
+      "last_line": 1921
+    }
+  ]
+}
