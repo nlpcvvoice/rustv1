@@ -1023,7 +1023,12 @@ pub async fn supervised_drain(
     let request = orch
         .send("orch_request_drain", json!({"instance": launch.instance}))
         .await?;
-    let exit = orch.receive().await?;
+    // ASTRO6 v63 watchdog reconciliation: the supervisor reaps with a
+    // 110 s wait, so the driver must not hold the ordinary 30 s receive
+    // budget for the initial drain reply.
+    let exit = orch
+        .receive_with_budget(Duration::from_secs(120))
+        .await?;
     ensure!(
         exit["kind"] == "orch_exit"
             && exit["fields"]["instance"] == launch.instance
