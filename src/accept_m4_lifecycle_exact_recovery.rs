@@ -1,5 +1,8 @@
 use super::*;
 
+#[path = "accept_m4_recovery_persistence.rs"]
+mod recovery_persistence;
+
 const RECOVERY: &str = "family-58-exact-recovery";
 const DRAIN_NEXT: &str = "final-authenticated-drain-and-exit";
 
@@ -442,6 +445,8 @@ async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState>
         let mut request_ids = BTreeSet::new();
         let mut last_request_id = None;
         let mut requests = Vec::new();
+        // Exact execution-time serializations, not values read back from disk.
+        let mut proof_commitments: Vec<(String, Vec<u8>)> = Vec::new();
         let mut expected_connections = Vec::new();
 
         // Each request is awaited and reconciled before the next submission.
@@ -552,7 +557,24 @@ async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState>
                     "physical_forwards": reconciled.forwards,
                     "unmatched_physical_records": 0
                 });
-                save_json(&out.join(format!("{case}.evidence.json")), &proof)?;
+                let proof_bytes =
+                    recovery_persistence::encode_proof(&proof).with_context(|| {
+                        format!(
+                            "recovery proof serialization: case_id={case} \
+                             field_path=\"$serialization\""
+                        )
+                    })?;
+
+                write_new(&out.join(format!("{case}.evidence.json")), &proof_bytes).with_context(
+                    || {
+                        format!(
+                            "recovery proof write: case_id={case} \
+                         field_path=\"$serialization\""
+                        )
+                    },
+                )?;
+
+                proof_commitments.push((case.clone(), proof_bytes));
                 requests.push(proof);
 
                 previous_output = Some(output);
@@ -565,6 +587,7 @@ async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState>
 
         ensure!(
             requests.len() == 44
+                && proof_commitments.len() == requests.len()
                 && request_ids.len() == 44
                 && next_forward
                     == uint(&launch.startup, "next_forward_id")?
@@ -593,21 +616,75 @@ async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState>
 
         // Read saved request/response/interval files through the commitments
         // made at each actual execution, rather than hashing them as new truth.
-        for proof in &requests {
+        for (proof, (committed_case, committed_bytes)) in requests.iter().zip(&proof_commitments) {
             let case = text(proof, "case_id")?;
             ensure!(
-                file_sha(&under(&out, text(proof, "request_path")?)?)?
-                    == text(proof, "request_sha256")?
-                    && value(&out.join(format!("{case}.evidence.json")))? == *proof,
-                "saved recovery request/proof changed"
+                case == committed_case.as_str(),
+                "recovery proof commitment order changed: \
+                 case_id={} field_path=\"/case_id\"",
+                case
             );
-            check_saved_reply(&out, &proof["response"])?;
+
+            // Also reject mutation of the retained in-memory proof.
+            let retained_bytes = recovery_persistence::encode_proof(proof).with_context(|| {
+                format!(
+                    "retained recovery proof serialization: \
+                         case_id={case} field_path=\"$serialization\""
+                )
+            })?;
+            recovery_persistence::verify_proof_bytes(case, committed_bytes, &retained_bytes)
+                .map_err(anyhow::Error::msg)
+                .with_context(|| format!("retained recovery proof changed: case_id={case}"))?;
+
+            let request_path = under(&out, text(proof, "request_path")?).with_context(|| {
+                format!(
+                    "saved recovery request path: \
+                         case_id={case} field_path=\"/request_path\""
+                )
+            })?;
+            let actual_request_sha = file_sha(&request_path).with_context(|| {
+                format!(
+                    "saved recovery request read: case_id={case} \
+                         field_path=\"/request_sha256\" path={}",
+                    request_path.display()
+                )
+            })?;
+            let expected_request_sha = text(proof, "request_sha256")?;
+            ensure!(
+                actual_request_sha == expected_request_sha,
+                "saved recovery request changed: case_id={} \
+                 field_path=\"/request_sha256\" path={} expected={} actual={}",
+                case,
+                request_path.display(),
+                expected_request_sha,
+                actual_request_sha,
+            );
+
+            let proof_path = out.join(format!("{case}.evidence.json"));
+            let actual_proof_bytes = bounded(&proof_path, JSON_LIMIT).with_context(|| {
+                format!(
+                    "saved recovery proof read: case_id={case} \
+                         field_path=\"$serialization\" path={}",
+                    proof_path.display()
+                )
+            })?;
+            recovery_persistence::verify_proof_bytes(case, committed_bytes, &actual_proof_bytes)
+                .map_err(anyhow::Error::msg)?;
+
+            check_saved_reply(&out, &proof["response"]).with_context(|| {
+                format!(
+                    "saved recovery response check: \
+                         case_id={case} field_path=\"/response\""
+                )
+            })?;
             let interval = &proof["manifest_interval"];
             let start = usize::try_from(uint(interval, "start_byte")?)?;
             let end = usize::try_from(uint(interval, "end_byte")?)?;
             ensure!(
                 start <= end && end <= manifest.len(),
-                "saved recovery interval bounds"
+                "saved recovery interval bounds: case_id={} \
+                 field_path=\"/manifest_interval\"",
+                case
             );
             let interval_bytes = bounded(&under(&out, text(interval, "path")?)?, MANIFEST_LIMIT)?;
             ensure!(
@@ -615,7 +692,9 @@ async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState>
                     && sha(&interval_bytes) == text(interval, "interval_sha256")?
                     && sha(&manifest[..start]) == text(interval, "prefix_before_sha256")?
                     && sha(&manifest[..end]) == text(interval, "prefix_after_sha256")?,
-                "saved recovery executor interval changed"
+                "saved recovery executor interval changed: case_id={} \
+                 field_path=\"/manifest_interval\"",
+                case
             );
         }
         ensure!(
