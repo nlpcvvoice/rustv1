@@ -467,12 +467,14 @@ pub(crate) fn run(
         "output_sha256": inventory,
         "output_inventory_excludes_only": [RECEIPT]
     });
+    let receipt_commitment = serde_json::to_vec_pretty(&receipt)?;
     let digest = save_json(&out.join(RECEIPT), &receipt)?;
     inventory.insert(RECEIPT.to_owned(), digest.clone());
     loaded.recheck()?;
     verify_tree(&out, &inventory)?;
     ensure!(
-        value(&out.join(RECEIPT))? == receipt,
+        bounded(&out.join(RECEIPT), JSON_LIMIT)? == receipt_commitment
+            && serde_json::to_vec_pretty(&receipt)? == receipt_commitment,
         "CPU receipt readback differs"
     );
     Ok(json!({

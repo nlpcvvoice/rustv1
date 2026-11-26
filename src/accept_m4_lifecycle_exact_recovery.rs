@@ -23,6 +23,9 @@ pub struct ExactRecoveryState {
     pub next_forward: u64,
     pub seen_request_ids: BTreeSet<u64>,
     pub recovery_evidence_sha256: String,
+    /// Original execution-time evidence, never reconstructed from saved JSON.
+    /// Its serialization is checked against recovery_evidence_sha256 on use.
+    pub recovery_evidence: Value,
     pub ledger_prefix: Vec<u8>,
     pub orchestration_prefix: Vec<u8>,
 }
@@ -409,7 +412,7 @@ async fn live_cursor(
 
 async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState> {
     #[allow(clippy::type_complexity)]
-    let work: Result<(Vec<u8>, Value, u64, BTreeSet<u64>, String, Vec<u8>)> = async {
+    let work: Result<(Vec<u8>, Value, u64, BTreeSet<u64>, String, Vec<u8>, Value)> = async {
         let preceding = consume_ready(&retained)?;
         let old = &retained.poison_exit.old;
         let launch = &retained.replacement;
@@ -791,12 +794,13 @@ async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState>
             request_ids,
             digest,
             ledger,
+            evidence,
         ))
     }
     .await;
 
     match work {
-        Ok((manifest, observation, next_forward, request_ids, digest, ledger)) => {
+        Ok((manifest, observation, next_forward, request_ids, digest, ledger, evidence)) => {
             let transcript = retained.orchestration_prefix.clone();
             Ok(ExactRecoveryState {
                 ready: retained,
@@ -805,6 +809,7 @@ async fn execute(mut retained: RecoveryReadyState) -> Result<ExactRecoveryState>
                 next_forward,
                 seen_request_ids: request_ids,
                 recovery_evidence_sha256: digest,
+                recovery_evidence: evidence,
                 ledger_prefix: ledger,
                 orchestration_prefix: transcript,
             })

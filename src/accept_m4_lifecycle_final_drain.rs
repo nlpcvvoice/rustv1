@@ -225,11 +225,26 @@ fn consume_recovery(state: &ExactRecoveryState) -> Result<Value> {
         "reattestation ledger identity changed"
     );
 
-    let saved: Value = serde_json::from_slice(&read_bound(
+    // The digest was committed when recovery wrote the aggregate evidence.
+    // Retain the original Value for exact computed-metric comparisons;
+    // never substitute a JSON-decoded copy for that expectation.
+    let saved_bytes = read_bound(
         &old.core.out,
         &format!("scheduler/{RECOVERY}/evidence.json"),
         &state.recovery_evidence_sha256,
-    )?)?;
+    )?;
+    let retained_bytes =
+        super::recovery_persistence::encode_proof(&state.recovery_evidence)
+            .context("serialize retained exact-recovery evidence")?;
+    super::recovery_persistence::verify_proof_bytes(
+        RECOVERY,
+        &retained_bytes,
+        &saved_bytes,
+    )
+    .map_err(anyhow::Error::msg)
+    .context("retained/file exact-recovery evidence mismatch")?;
+
+    let saved = state.recovery_evidence.clone();
     ensure!(
         saved["schema"] == "rustv1.accept_m4_exact_recovery.v1"
             && saved["case_id"] == RECOVERY
@@ -361,6 +376,18 @@ fn consume_recovery(state: &ExactRecoveryState) -> Result<Value> {
             "input": [bundle.fixtures[fixture].text],
             "encoding_format": encoding
         }))?;
+        let proof_path = root.join(format!("{case}.evidence.json"));
+        let expected_proof_bytes = recovery_persistence::encode_proof(proof)
+            .with_context(|| format!("serialize retained recovery proof: case_id={case}"))?;
+        let actual_proof_bytes = bounded(&proof_path, JSON_LIMIT)
+            .with_context(|| format!("read saved recovery proof: case_id={case}"))?;
+        recovery_persistence::verify_proof_bytes(
+            &case,
+            &expected_proof_bytes,
+            &actual_proof_bytes,
+        )
+        .map_err(anyhow::Error::msg)?;
+
         ensure!(
             proof["case_id"] == case
                 && proof["fixture_index"] == fixture
@@ -369,7 +396,7 @@ fn consume_recovery(state: &ExactRecoveryState) -> Result<Value> {
                 && proof["request_path"] == format!("{case}.request.bin")
                 && proof["request_sha256"] == sha(&request)
                 && bounded(&root.join(format!("{case}.request.bin")), JSON_LIMIT)? == request
-                && value(&root.join(format!("{case}.evidence.json")))? == *proof
+                && actual_proof_bytes == expected_proof_bytes
                 && proof["observation_before"] == observation
                 && proof["logical_backend_request_delta"] == 1
                 && proof["unmatched_physical_records"] == 0
