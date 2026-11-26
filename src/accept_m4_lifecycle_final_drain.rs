@@ -233,16 +233,11 @@ fn consume_recovery(state: &ExactRecoveryState) -> Result<Value> {
         &format!("scheduler/{RECOVERY}/evidence.json"),
         &state.recovery_evidence_sha256,
     )?;
-    let retained_bytes =
-        super::recovery_persistence::encode_proof(&state.recovery_evidence)
-            .context("serialize retained exact-recovery evidence")?;
-    super::recovery_persistence::verify_proof_bytes(
-        RECOVERY,
-        &retained_bytes,
-        &saved_bytes,
-    )
-    .map_err(anyhow::Error::msg)
-    .context("retained/file exact-recovery evidence mismatch")?;
+    let retained_bytes = super::recovery_persistence::encode_proof(&state.recovery_evidence)
+        .context("serialize retained exact-recovery evidence")?;
+    super::recovery_persistence::verify_proof_bytes(RECOVERY, &retained_bytes, &saved_bytes)
+        .map_err(anyhow::Error::msg)
+        .context("retained/file exact-recovery evidence mismatch")?;
 
     let saved = state.recovery_evidence.clone();
     ensure!(
@@ -381,12 +376,8 @@ fn consume_recovery(state: &ExactRecoveryState) -> Result<Value> {
             .with_context(|| format!("serialize retained recovery proof: case_id={case}"))?;
         let actual_proof_bytes = bounded(&proof_path, JSON_LIMIT)
             .with_context(|| format!("read saved recovery proof: case_id={case}"))?;
-        recovery_persistence::verify_proof_bytes(
-            &case,
-            &expected_proof_bytes,
-            &actual_proof_bytes,
-        )
-        .map_err(anyhow::Error::msg)?;
+        recovery_persistence::verify_proof_bytes(&case, &expected_proof_bytes, &actual_proof_bytes)
+            .map_err(anyhow::Error::msg)?;
 
         ensure!(
             proof["case_id"] == case
